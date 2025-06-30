@@ -255,7 +255,7 @@ export default function Inventory() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="cost">Custo (RR$)</Label>
+                  <Label htmlFor="cost">Custo (R$)</Label>
                   <Input
                     id="cost"
                     type="number"
@@ -265,7 +265,7 @@ export default function Inventory() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="sellingPrice">Preço de Venda (RR$)</Label>
+                  <Label htmlFor="sellingPrice">Preço de Venda (R$)</Label>
                   <Input
                     id="sellingPrice"
                     type="number"
@@ -346,7 +346,7 @@ export default function Inventory() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              RR$
+              R$
               {inventory.reduce((sum, item) => sum + item.currentStock * item.cost, 0).toLocaleString("pt-BR")}
             </div>
             <p className="text-xs text-muted-foreground">Valor total de custo</p>
@@ -389,11 +389,11 @@ export default function Inventory() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Custo:</span>
-                    <p className="font-medium">RR$ {item.cost}</p>
+                    <p className="font-medium">R$ {item.cost}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Venda:</span>
-                    <p className="font-medium">RR$ {item.sellingPrice}</p>
+                    <p className="font-medium">R$ {item.sellingPrice}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Última Venda:</span>
@@ -456,7 +456,7 @@ export default function Inventory() {
                     <div className="text-right">
                       <p className="font-medium text-green-600">{promotion.discount}% OFF</p>
                       <p className="text-sm text-muted-foreground">
-                        RR$ {item.sellingPrice} → RR$ {(item.sellingPrice * (1 - promotion.discount / 100)).toFixed(2)}
+                        R$ {item.sellingPrice} → R$ {(item.sellingPrice * (1 - promotion.discount / 100)).toFixed(2)}
                       </p>
                     </div>
                   </div>

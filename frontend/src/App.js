@@ -73,7 +73,7 @@ function App() {
     { id: "scheduling", name: "Agendamentos", icon: Calendar, component: Scheduling },
   ]
 
-  if (!isAuthenticated) {
+  if (isAuthenticated) {
     return <LoginPage onLogin={() => setIsAuthenticated(true)} />
   }
 
