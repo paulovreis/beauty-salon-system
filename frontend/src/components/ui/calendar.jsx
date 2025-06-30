@@ -12,27 +12,17 @@ const Calendar = React.forwardRef(({ className, selected, onSelect, mode = "sing
   const currentMonth = currentDate.getMonth()
   const currentYear = currentDate.getFullYear()
 
+  // Criar datas usando construtor direto para evitar problemas de fuso horário
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1)
   const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0)
   const firstDayOfWeek = firstDayOfMonth.getDay()
   const daysInMonth = lastDayOfMonth.getDate()
 
   const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
   ]
 
-  const dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+  const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 
   const previousMonth = () => {
     setCurrentDate(new Date(currentYear, currentMonth - 1, 1))
@@ -52,12 +42,21 @@ const Calendar = React.forwardRef(({ className, selected, onSelect, mode = "sing
   const isSelected = (day) => {
     if (!selected) return false
     const date = new Date(currentYear, currentMonth, day)
-    return selected.toDateString() === date.toDateString()
+    // Comparar apenas ano, mês e dia para evitar problemas de horário
+    return (
+      selected.getFullYear() === date.getFullYear() &&
+      selected.getMonth() === date.getMonth() &&
+      selected.getDate() === date.getDate()
+    )
   }
 
   const isToday = (day) => {
     const date = new Date(currentYear, currentMonth, day)
-    return today.toDateString() === date.toDateString()
+    return (
+      today.getFullYear() === date.getFullYear() &&
+      today.getMonth() === date.getMonth() &&
+      today.getDate() === date.getDate()
+    )
   }
 
   const renderCalendarDays = () => {

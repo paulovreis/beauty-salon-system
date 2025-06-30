@@ -140,7 +140,18 @@ export default function Scheduling() {
   }
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString("en-US", {
+    // Se for uma string de data (YYYY-MM-DD), criar a data corretamente
+    if (typeof date === 'string' && date.includes('-')) {
+      const [year, month, day] = date.split('-').map(Number)
+      const localDate = new Date(year, month - 1, day)
+      return localDate.toLocaleDateString("pt-BR", {
+        weekday: "short",
+        month: "short", 
+        day: "numeric",
+      })
+    }
+    // Se for um objeto Date, usar diretamente
+    return new Date(date).toLocaleDateString("pt-BR", {
       weekday: "short",
       month: "short",
       day: "numeric",
@@ -186,7 +197,11 @@ export default function Scheduling() {
     }
   }
 
-  const todayAppointments = appointments.filter((apt) => apt.date === selectedDate.toISOString().split("T")[0])
+  const todayAppointments = appointments.filter((apt) => {
+    // Criar data local a partir da string de data selecionada
+    const selectedDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+    return apt.date === selectedDateStr
+  })
   const upcomingAppointments = appointments.filter((apt) => new Date(apt.date) > new Date()).slice(0, 5)
 
   return (
@@ -342,7 +357,11 @@ export default function Scheduling() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CalendarIcon className="h-5 w-5" />
-              {formatDate(selectedDate.toISOString().split("T")[0])} Agenda
+              {selectedDate.toLocaleDateString("pt-BR", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })} Agenda
             </CardTitle>
             <CardDescription>{todayAppointments.length} agendamentos para hoje</CardDescription>
           </CardHeader>
