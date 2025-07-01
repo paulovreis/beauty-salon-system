@@ -1,9 +1,15 @@
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { Button } from "./ui/button"
-import { Input } from "./ui/input"
-import { Label } from "./ui/label"
-import { Badge } from "./ui/badge"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Badge } from "./ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -11,154 +17,153 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "./ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar"
-import { Plus, Edit, Trash2, DollarSign } from "lucide-react"
+} from "./ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar";
+import { Plus, Edit, Trash2, DollarSign } from "lucide-react";
+
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+// Função global de fetchWithAuth (deve estar disponível no projeto)
+async function fetchWithAuth(url, options = {}) {
+  let token = localStorage.getItem("token");
+  if (!token) {
+    window.location.href = "/login";
+    throw new Error("Usuário não autenticado");
+  }
+  let response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (response.status === 403 || response.status === 401) {
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+    throw new Error("Sessão expirada ou acesso negado");
+  }
+  return response;
+}
 
 export default function Employees() {
-  const [employees, setEmployees] = useState([
-    {
-      id: 1,
-      name: "Ana Costa",
-      email: "ana@salon.com",
-      phone: "(11) 99999-1111",
-      specialties: ["Coloração de Cabelo", "Progressiva"],
-      commissionRates: {
-        "Coloração de Cabelo": 20,
-        Progressiva: 25,
-        Corte: 15,
-      },
-      monthlyStats: {
-        servicesCompleted: 45,
-        totalRevenue: 3200,
-        totalCommission: 640,
-        averageService: 71,
-      },
-      status: "ativo",
-    },
-    {
-      id: 2,
-      name: "Carla Lima",
-      email: "carla@salon.com",
-      phone: "(11) 99999-2222",
-      specialties: ["Progressiva", "Queratina"],
-      commissionRates: {
-        Progressiva: 25,
-        Queratina: 22,
-        "Tratamento Capilar": 18,
-      },
-      monthlyStats: {
-        servicesCompleted: 38,
-        totalRevenue: 2850,
-        totalCommission: 570,
-        averageService: 75,
-      },
-      status: "ativo",
-    },
-    {
-      id: 3,
-      name: "Beatriz Souza",
-      email: "beatriz@salon.com",
-      phone: "(11) 99999-3333",
-      specialties: ["Manicure", "Pedicure"],
-      commissionRates: {
-        Manicure: 30,
-        Pedicure: 30,
-        "Nail Art": 35,
-      },
-      monthlyStats: {
-        servicesCompleted: 42,
-        totalRevenue: 2100,
-        totalCommission: 420,
-        averageService: 50,
-      },
-      status: "ativo",
-    },
-  ])
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [services, setServices] = useState([]);
+  const availableServices = services.map((s) => s.name);
+  // Carregar funcionários e serviços do backend
+  useEffect(() => {
+    async function fetchEmployees() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetchWithAuth(`${API_URL}/employees`);
+        if (!res.ok) throw new Error("Erro ao carregar funcionários.");
+        const data = await res.json();
+        setEmployees(data);
+      } catch (err) {
+        setError("Erro ao carregar funcionários.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    async function fetchServices() {
+      try {
+        const res = await fetchWithAuth(`${API_URL}/services`);
+        if (res.ok) {
+          const data = await res.json();
+          setServices(data);
+        }
+      } catch (err) {}
+    }
+    fetchEmployees();
+    fetchServices();
+  }, []);
 
   const [newEmployee, setNewEmployee] = useState({
     name: "",
     email: "",
     phone: "",
-    specialties: [],
-    commissionRates: {},
-  })
+    specialties: [], // [{ service_id, commission_rate }]
+  });
 
-  const [selectedSpecialty, setSelectedSpecialty] = useState("")
-  const [commissionRate, setCommissionRate] = useState("")
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  const [commissionRate, setCommissionRate] = useState("");
 
-  const availableServices = [
-    "Coloração de Cabelo",
-    "Progressiva",
-    "Corte",
-    "Queratina",
-    "Tratamento Capilar",
-    "Manicure",
-    "Pedicure",
-    "Nail Art",
-    "Facial",
-    "Sobrancelha",
-  ]
-
+  // Adiciona especialidade (usando id do serviço)
   const addSpecialty = () => {
     if (selectedSpecialty && commissionRate) {
+      if (newEmployee.specialties.some(s => s.service_id === Number(selectedSpecialty))) return;
       setNewEmployee({
         ...newEmployee,
-        specialties: [...newEmployee.specialties, selectedSpecialty],
-        commissionRates: {
-          ...newEmployee.commissionRates,
-          [selectedSpecialty]: Number.parseInt(commissionRate),
-        },
-      })
-      setSelectedSpecialty("")
-      setCommissionRate("")
+        specialties: [
+          ...newEmployee.specialties,
+          { service_id: Number(selectedSpecialty), commission_rate: Number(commissionRate) }
+        ]
+      });
+      setSelectedSpecialty("");
+      setCommissionRate("");
     }
-  }
+  };
 
-  const removeSpecialty = (specialty) => {
-    const updatedSpecialties = newEmployee.specialties.filter((s) => s !== specialty)
-    const updatedRates = { ...newEmployee.commissionRates }
-    delete updatedRates[specialty]
-
+  const removeSpecialty = (service_id) => {
     setNewEmployee({
       ...newEmployee,
-      specialties: updatedSpecialties,
-      commissionRates: updatedRates,
-    })
-  }
+      specialties: newEmployee.specialties.filter(s => s.service_id !== service_id)
+    });
+  };
 
-  const handleAddEmployee = () => {
-    if (newEmployee.name && newEmployee.email && newEmployee.specialties.length > 0) {
-      const employee = {
-        id: employees.length + 1,
-        ...newEmployee,
-        monthlyStats: {
-          servicesCompleted: 0,
-          totalRevenue: 0,
-          totalCommission: 0,
-          averageService: 0,
-        },
-        status: "active",
+  // Adicionar funcionário (integração backend)
+  const handleAddEmployee = async () => {
+    setError("");
+    try {
+      // Cria funcionário
+      const res = await fetchWithAuth(`${API_URL}/employees`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newEmployee.name,
+          email: newEmployee.email,
+          phone: newEmployee.phone,
+        }),
+      });
+      if (res.status === 409) {
+        setError("E-mail já cadastrado");
+        return;
       }
-
-      setEmployees([...employees, employee])
-      setNewEmployee({
-        name: "",
-        email: "",
-        phone: "",
-        specialties: [],
-        commissionRates: {},
-      })
+      if (!res.ok) throw new Error("Erro ao criar funcionário");
+      const created = await res.json();
+      // Adiciona especialidades
+      for (const spec of newEmployee.specialties) {
+        await fetchWithAuth(`${API_URL}/employees/${created.id}/specialties`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(spec),
+        });
+      }
+      // Recarrega lista
+      const reload = await fetchWithAuth(`${API_URL}/employees`);
+      setEmployees(await reload.json());
+      setNewEmployee({ name: "", email: "", phone: "", specialties: [] });
+    } catch (err) {
+      setError(err.message || "Erro ao criar funcionário");
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold">Employee Management</h2>
-          <p className="text-muted-foreground">Manage staff and commission structures</p>
+          <h2 className="text-3xl font-bold">Gestão de Funcionários</h2>
+          <p className="text-muted-foreground">
+            Gerencie a equipe e as estruturas de comissão
+          </p>
         </div>
         <Dialog>
           <DialogTrigger asChild>
@@ -169,51 +174,65 @@ export default function Employees() {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Add New Employee</DialogTitle>
-              <DialogDescription>Create a new employee profile with commission rates</DialogDescription>
+              <DialogTitle>Adicionar Novo Funcionário</DialogTitle>
+              <DialogDescription>
+                Crie um novo perfil de funcionário com taxas de comissão
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="employeeName">Full Name</Label>
+                  <Label htmlFor="employeeName">Nome Completo</Label>
                   <Input
                     id="employeeName"
                     value={newEmployee.name}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                    onChange={(e) =>
+                      setNewEmployee({ ...newEmployee, name: e.target.value })
+                    }
                     placeholder="Ana Costa"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="employeeEmail">Email</Label>
+                  <Label htmlFor="employeeEmail">E-mail</Label>
                   <Input
                     id="employeeEmail"
                     type="email"
                     value={newEmployee.email}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
+                    onChange={(e) =>
+                      setNewEmployee({ ...newEmployee, email: e.target.value })
+                    }
                     placeholder="ana@salon.com"
                   />
                 </div>
               </div>
               <div>
-                <Label htmlFor="employeePhone">Phone</Label>
+                <Label htmlFor="employeePhone">Telefone</Label>
                 <Input
                   id="employeePhone"
                   value={newEmployee.phone}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                  onChange={(e) =>
+                    setNewEmployee({ ...newEmployee, phone: e.target.value })
+                  }
                   placeholder="(11) 99999-1111"
                 />
               </div>
 
               <div className="space-y-3">
-                <Label>Specialties & Commission Rates</Label>
+                <Label>Especialidades & Taxas de Comissão</Label>
                 <div className="flex gap-2">
-                  <Select value={selectedSpecialty} onValueChange={setSelectedSpecialty}>
+                  <Select
+                    value={selectedSpecialty}
+                    onValueChange={setSelectedSpecialty}
+                  >
                     <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Select service" />
+                      <SelectValue placeholder="Selecione o serviço" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableServices
-                        .filter((service) => !newEmployee.specialties.includes(service))
+                        .filter(
+                          (service) =>
+                            !newEmployee.specialties.includes(service)
+                        )
                         .map((service) => (
                           <SelectItem key={service} value={service}>
                             {service}
@@ -228,19 +247,31 @@ export default function Employees() {
                     onChange={(e) => setCommissionRate(e.target.value)}
                     className="w-32"
                   />
-                  <Button onClick={addSpecialty} disabled={!selectedSpecialty || !commissionRate}>
-                    Add
+                  <Button
+                    onClick={addSpecialty}
+                    disabled={!selectedSpecialty || !commissionRate}
+                  >
+                    Adicionar
                   </Button>
                 </div>
 
                 {newEmployee.specialties.length > 0 && (
                   <div className="space-y-2">
                     {newEmployee.specialties.map((specialty) => (
-                      <div key={specialty} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <div
+                        key={specialty}
+                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                      >
                         <span className="font-medium">{specialty}</span>
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary">{newEmployee.commissionRates[specialty]}%</Badge>
-                          <Button variant="ghost" size="sm" onClick={() => removeSpecialty(specialty)}>
+                          <Badge variant="secondary">
+                            {newEmployee.commissionRates[specialty]}%
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeSpecialty(specialty)}
+                          >
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
@@ -251,7 +282,7 @@ export default function Employees() {
               </div>
 
               <Button onClick={handleAddEmployee} className="w-full">
-                Add Employee
+                Adicionar Funcionário
               </Button>
             </div>
           </DialogContent>
@@ -272,40 +303,57 @@ export default function Employees() {
                   <CardTitle className="text-lg">{employee.name}</CardTitle>
                   <CardDescription>{employee.email}</CardDescription>
                 </div>
-                <Badge variant={employee.status === "active" ? "default" : "secondary"}>{employee.status}</Badge>
+                <Badge
+                  variant={
+                    employee.status === "active" ? "default" : "secondary"
+                  }
+                >
+                  {employee.status}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <h4 className="font-medium mb-2">Monthly Performance</h4>
+                <h4 className="font-medium mb-2">Desempenho Mensal</h4>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Services:</span>
-                    <span className="font-medium">{employee.monthlyStats.servicesCompleted}</span>
+                    <span className="text-muted-foreground">Serviços:</span>
+                    <span className="font-medium">
+                      {employee.monthlyStats?.servicesCompleted ?? 0}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Revenue:</span>
-                    <span className="font-medium">R${employee.monthlyStats.totalRevenue}</span>
+                    <span className="text-muted-foreground">Receita:</span>
+                    <span className="font-medium">
+                      R${employee.monthlyStats?.totalRevenue ?? 0}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Commission:</span>
-                    <span className="font-medium text-green-600">R${employee.monthlyStats.totalCommission}</span>
+                    <span className="text-muted-foreground">Comissão:</span>
+                    <span className="font-medium text-green-600">
+                      R${employee.monthlyStats?.totalCommission ?? 0}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Avg/Service:</span>
-                    <span className="font-medium">R${employee.monthlyStats.averageService}</span>
+                    <span className="text-muted-foreground">Média/Serviço:</span>
+                    <span className="font-medium">
+                      R${employee.monthlyStats?.averageService ?? 0}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div>
-                <h4 className="font-medium mb-2">Specialties & Rates</h4>
+                <h4 className="font-medium mb-2">Especialidades & Taxas</h4>
                 <div className="space-y-1">
-                  {employee.specialties.map((specialty) => (
-                    <div key={specialty} className="flex justify-between items-center text-sm">
+                  {(employee.specialties || []).map((specialty) => (
+                    <div
+                      key={specialty}
+                      className="flex justify-between items-center text-sm"
+                    >
                       <span>{specialty}</span>
                       <Badge variant="outline" className="text-xs">
-                        {employee.commissionRates[specialty]}%
+                        {employee.commissionRates?.[specialty] ?? 0}%
                       </Badge>
                     </div>
                   ))}
@@ -313,9 +361,13 @@ export default function Employees() {
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1 bg-transparent">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 bg-transparent"
+                >
                   <Edit className="h-3 w-3 mr-1" />
-                  Edit
+                  Editar
                 </Button>
                 <Button variant="outline" size="sm">
                   <DollarSign className="h-3 w-3" />
@@ -329,13 +381,16 @@ export default function Employees() {
       {/* Commission Summary */}
       <Card>
         <CardHeader>
-          <CardTitle>Commission Summary - This Month</CardTitle>
-          <CardDescription>Total commissions owed to employees</CardDescription>
+          <CardTitle>Resumo de Comissões - Este Mês</CardTitle>
+          <CardDescription>Total de comissões devidas aos funcionários</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {employees.map((employee) => (
-              <div key={employee.id} className="flex items-center justify-between">
+              <div
+                key={employee.id}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback>
@@ -344,23 +399,38 @@ export default function Employees() {
                   </Avatar>
                   <div>
                     <p className="font-medium">{employee.name}</p>
-                    <p className="text-sm text-muted-foreground">{employee.monthlyStats.servicesCompleted} services</p>
+                    <p className="text-sm text-muted-foreground">
+                      {employee.monthlyStats?.servicesCompleted ?? 0} serviços
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium">R${employee.monthlyStats.totalCommission}</p>
+                  <p className="font-medium">
+                    R${employee.monthlyStats?.totalCommission ?? 0}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {((employee.monthlyStats.totalCommission / employee.monthlyStats.totalRevenue) * 100).toFixed(1)}%
-                    avg rate
+                    {employee.monthlyStats?.totalRevenue
+                      ? (
+                          (employee.monthlyStats.totalCommission /
+                            employee.monthlyStats.totalRevenue) *
+                          100
+                        ).toFixed(1)
+                      : 0}
+                    % em média
                   </p>
                 </div>
               </div>
             ))}
             <div className="border-t pt-4">
               <div className="flex justify-between items-center font-medium">
-                <span>Total Commissions:</span>
+                <span>Total de Comissões:</span>
                 <span className="text-lg">
-                  R${employees.reduce((sum, emp) => sum + emp.monthlyStats.totalCommission, 0)}
+                  R$
+                  {employees.reduce(
+                    (sum, emp) =>
+                      sum + (emp.monthlyStats?.totalCommission ?? 0),
+                    0
+                  )}
                 </span>
               </div>
             </div>
@@ -368,5 +438,5 @@ export default function Employees() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
