@@ -56,7 +56,174 @@ export default function Employees() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [services, setServices] = useState([]);
-  const availableServices = services.map((s) => s.name);
+  // Não precisa mais de availableServices, usaremos services diretamente
+  const [newEmployee, setNewEmployee] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    specialties: [], // [{ service_id, commission_rate }]
+  });
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  const [commissionRate, setCommissionRate] = useState("");
+  // Estado para edição
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null); // { ...employee, specialties: [{service_id, commission_rate, id}] }
+
+  // Abre modal de edição e carrega especialidades do funcionário
+  const handleEditClick = async (employee) => {
+    setError("");
+    try {
+      // Busca especialidades do funcionário
+      const res = await fetchWithAuth(
+        `${API_URL}/employees/${employee.id}/specialties`
+      );
+      let specialties = [];
+      if (res.ok) {
+        specialties = await res.json();
+      }
+      setEditingEmployee({ ...employee, specialties });
+      setEditModalOpen(true);
+    } catch (err) {
+      setError("Erro ao carregar especialidades do funcionário");
+    }
+  };
+
+  // Atualiza campos do funcionário em edição
+  const handleEditField = (field, value) => {
+    setEditingEmployee((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Adiciona especialidade na edição
+  const handleAddEditSpecialty = (service_id, commission_rate) => {
+    if (!service_id || !commission_rate) return;
+    if (
+      editingEmployee.specialties.some(
+        (s) => s.service_id === Number(service_id)
+      )
+    )
+      return;
+    setEditingEmployee((prev) => ({
+      ...prev,
+      specialties: [
+        ...prev.specialties,
+        {
+          service_id: Number(service_id),
+          commission_rate: Number(commission_rate),
+        },
+      ],
+    }));
+  };
+
+  // Remove especialidade na edição
+  const handleRemoveEditSpecialty = (service_id) => {
+    setEditingEmployee((prev) => ({
+      ...prev,
+      specialties: prev.specialties.filter((s) => s.service_id !== service_id),
+    }));
+  };
+
+  // Atualiza taxa de comissão de uma especialidade na edição
+  const handleEditSpecialtyRate = (service_id, newRate) => {
+    setEditingEmployee((prev) => ({
+      ...prev,
+      specialties: prev.specialties.map((s) =>
+        s.service_id === service_id
+          ? { ...s, commission_rate: Number(newRate) }
+          : s
+      ),
+    }));
+  };
+
+  // Salva edição do funcionário e especialidades
+  const handleSaveEditEmployee = async () => {
+    setError("");
+    try {
+      // Atualiza dados básicos
+      await fetchWithAuth(`${API_URL}/employees/${editingEmployee.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editingEmployee.name,
+          email: editingEmployee.email,
+          phone: editingEmployee.phone,
+          status: editingEmployee.status,
+        }),
+      });
+
+      // Busca especialidades atuais do backend
+      const res = await fetchWithAuth(
+        `${API_URL}/employees/${editingEmployee.id}/specialties`
+      );
+      const currentSpecs = res.ok ? await res.json() : [];
+
+      // Calcula especialidades a adicionar, atualizar e remover
+      const toAdd = editingEmployee.specialties.filter(
+        (s) => !currentSpecs.some((cs) => cs.service_id === s.service_id)
+      );
+      const toUpdate = editingEmployee.specialties.filter((s) =>
+        currentSpecs.some(
+          (cs) =>
+            cs.service_id === s.service_id &&
+            cs.commission_rate !== s.commission_rate
+        )
+      );
+      const toRemove = currentSpecs.filter(
+        (cs) =>
+          !editingEmployee.specialties.some(
+            (s) => s.service_id === cs.service_id
+          )
+      );
+
+      // Adiciona novas especialidades
+      for (const spec of toAdd) {
+        await fetchWithAuth(
+          `${API_URL}/employees/${editingEmployee.id}/specialties`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              service_id: spec.service_id,
+              commission_rate: spec.commission_rate,
+            }),
+          }
+        );
+      }
+      // Atualiza taxas
+      for (const spec of toUpdate) {
+        const specId = currentSpecs.find(
+          (cs) => cs.service_id === spec.service_id
+        )?.id;
+        if (specId) {
+          await fetchWithAuth(
+            `${API_URL}/employees/${editingEmployee.id}/specialties/${specId}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ commission_rate: spec.commission_rate }),
+            }
+          );
+        }
+      }
+      // Remove especialidades
+      for (const spec of toRemove) {
+        await fetchWithAuth(
+          `${API_URL}/employees/${editingEmployee.id}/specialties/${spec.id}`,
+          {
+            method: "DELETE",
+          }
+        );
+      }
+
+      // Atualiza lista
+      const reload = await fetchWithAuth(`${API_URL}/employees`);
+      setEmployees(await reload.json());
+      setEditModalOpen(false);
+      setEditingEmployee(null);
+    } catch (err) {
+      setError("Erro ao salvar edição do funcionário");
+    }
+  };
+
   // Carregar funcionários e serviços do backend
   useEffect(() => {
     async function fetchEmployees() {
@@ -86,26 +253,24 @@ export default function Employees() {
     fetchServices();
   }, []);
 
-  const [newEmployee, setNewEmployee] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    specialties: [], // [{ service_id, commission_rate }]
-  });
-
-  const [selectedSpecialty, setSelectedSpecialty] = useState("");
-  const [commissionRate, setCommissionRate] = useState("");
-
   // Adiciona especialidade (usando id do serviço)
   const addSpecialty = () => {
     if (selectedSpecialty && commissionRate) {
-      if (newEmployee.specialties.some(s => s.service_id === Number(selectedSpecialty))) return;
+      if (
+        newEmployee.specialties.some(
+          (s) => s.service_id === Number(selectedSpecialty)
+        )
+      )
+        return;
       setNewEmployee({
         ...newEmployee,
         specialties: [
           ...newEmployee.specialties,
-          { service_id: Number(selectedSpecialty), commission_rate: Number(commissionRate) }
-        ]
+          {
+            service_id: Number(selectedSpecialty),
+            commission_rate: Number(commissionRate),
+          },
+        ],
       });
       setSelectedSpecialty("");
       setCommissionRate("");
@@ -115,7 +280,9 @@ export default function Employees() {
   const removeSpecialty = (service_id) => {
     setNewEmployee({
       ...newEmployee,
-      specialties: newEmployee.specialties.filter(s => s.service_id !== service_id)
+      specialties: newEmployee.specialties.filter(
+        (s) => s.service_id !== service_id
+      ),
     });
   };
 
@@ -153,6 +320,22 @@ export default function Employees() {
       setNewEmployee({ name: "", email: "", phone: "", specialties: [] });
     } catch (err) {
       setError(err.message || "Erro ao criar funcionário");
+    }
+  };
+
+    // Deletar funcionário
+  const handleDeleteEmployee = async (id) => {
+    if (!window.confirm("Tem certeza que deseja excluir este funcionário?")) return;
+    setError("");
+    try {
+      const res = await fetchWithAuth(`${API_URL}/employees/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Erro ao excluir funcionário");
+      // Atualiza lista
+      setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    } catch (err) {
+      setError(err.message || "Erro ao excluir funcionário");
     }
   };
 
@@ -228,21 +411,21 @@ export default function Employees() {
                       <SelectValue placeholder="Selecione o serviço" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableServices
+                      {services
                         .filter(
                           (service) =>
-                            !newEmployee.specialties.includes(service)
+                            !newEmployee.specialties.some((s) => s.service_id === service.id)
                         )
                         .map((service) => (
-                          <SelectItem key={service} value={service}>
-                            {service}
+                          <SelectItem key={service.id} value={String(service.id)}>
+                            {service.name}
                           </SelectItem>
                         ))}
                     </SelectContent>
                   </Select>
                   <Input
                     type="number"
-                    placeholder="Commission %"
+                    placeholder="Comissão %"
                     value={commissionRate}
                     onChange={(e) => setCommissionRate(e.target.value)}
                     className="w-32"
@@ -257,26 +440,27 @@ export default function Employees() {
 
                 {newEmployee.specialties.length > 0 && (
                   <div className="space-y-2">
-                    {newEmployee.specialties.map((specialty) => (
-                      <div
-                        key={specialty}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
-                      >
-                        <span className="font-medium">{specialty}</span>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">
-                            {newEmployee.commissionRates[specialty]}%
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeSpecialty(specialty)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                    {newEmployee.specialties.map((spec) => {
+                      const service = services.find((s) => s.id === spec.service_id);
+                      return (
+                        <div
+                          key={spec.service_id}
+                          className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                        >
+                          <span className="font-medium">{service ? service.name : spec.service_id}</span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">{spec.commission_rate}%</Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeSpecialty(spec.service_id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -335,7 +519,9 @@ export default function Employees() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Média/Serviço:</span>
+                    <span className="text-muted-foreground">
+                      Média/Serviço:
+                    </span>
                     <span className="font-medium">
                       R${employee.monthlyStats?.averageService ?? 0}
                     </span>
@@ -346,17 +532,21 @@ export default function Employees() {
               <div>
                 <h4 className="font-medium mb-2">Especialidades & Taxas</h4>
                 <div className="space-y-1">
-                  {(employee.specialties || []).map((specialty) => (
-                    <div
-                      key={specialty}
-                      className="flex justify-between items-center text-sm"
-                    >
-                      <span>{specialty}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {employee.commissionRates?.[specialty] ?? 0}%
-                      </Badge>
-                    </div>
-                  ))}
+                  {(employee.specialties || []).map((spec) => {
+                    const service = services.find((s) => s.id === (spec.service_id || spec));
+                    const commission = spec.commission_rate || (employee.commissionRates?.[spec] ?? 0);
+                    return (
+                      <div
+                        key={spec.service_id || spec}
+                        className="flex justify-between items-center text-sm"
+                      >
+                        <span>{service ? service.name : spec.service_id || spec}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {commission}%
+                        </Badge>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -365,10 +555,185 @@ export default function Employees() {
                   variant="outline"
                   size="sm"
                   className="flex-1 bg-transparent"
+                  onClick={() => handleEditClick(employee)}
                 >
                   <Edit className="h-3 w-3 mr-1" />
                   Editar
                 </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteEmployee(employee.id)}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" />
+                  Excluir
+                </Button>
+                {/* Modal de edição de funcionário */}
+                {editModalOpen && editingEmployee && (
+                  <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>Editar Funcionário</DialogTitle>
+                        <DialogDescription>
+                          Edite os dados e especialidades do funcionário
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="editEmployeeName">
+                              Nome Completo
+                            </Label>
+                            <Input
+                              id="editEmployeeName"
+                              value={editingEmployee.name}
+                              onChange={(e) =>
+                                handleEditField("name", e.target.value)
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="editEmployeeEmail">E-mail</Label>
+                            <Input
+                              id="editEmployeeEmail"
+                              value={editingEmployee.email}
+                              onChange={(e) =>
+                                handleEditField("email", e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="editEmployeePhone">Telefone</Label>
+                          <Input
+                            id="editEmployeePhone"
+                            value={editingEmployee.phone}
+                            onChange={(e) =>
+                              handleEditField("phone", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label>Status</Label>
+                          <Select
+                            value={editingEmployee.status}
+                            onValueChange={(v) => handleEditField("status", v)}
+                          >
+                            <SelectTrigger className="w-40">
+                              <SelectValue placeholder="Selecione o status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Ativo</SelectItem>
+                              <SelectItem value="inactive">Inativo</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-3">
+                          <Label>Especialidades & Taxas de Comissão</Label>
+                          <div className="flex gap-2">
+                            <Select
+                              value={selectedSpecialty}
+                              onValueChange={setSelectedSpecialty}
+                            >
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Selecione o serviço" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {services
+                                  .filter(
+                                    (s) =>
+                                      !editingEmployee.specialties.some(
+                                        (es) => es.service_id === s.id
+                                      )
+                                  )
+                                  .map((service) => (
+                                    <SelectItem
+                                      key={service.id}
+                                      value={String(service.id)}
+                                    >
+                                      {service.name}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              type="number"
+                              placeholder="Comissão %"
+                              value={commissionRate}
+                              onChange={(e) =>
+                                setCommissionRate(e.target.value)
+                              }
+                              className="w-32"
+                            />
+                            <Button
+                              onClick={() => {
+                                handleAddEditSpecialty(
+                                  selectedSpecialty,
+                                  commissionRate
+                                );
+                                setSelectedSpecialty("");
+                                setCommissionRate("");
+                              }}
+                              disabled={!selectedSpecialty || !commissionRate}
+                            >
+                              Adicionar
+                            </Button>
+                          </div>
+                          {editingEmployee.specialties.length > 0 && (
+                            <div className="space-y-2">
+                              {editingEmployee.specialties.map((spec) => {
+                                const service = services.find(
+                                  (s) => s.id === spec.service_id
+                                );
+                                return (
+                                  <div
+                                    key={spec.service_id}
+                                    className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                                  >
+                                    <span className="font-medium">
+                                      {service ? service.name : spec.service_id}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        type="number"
+                                        value={spec.commission_rate}
+                                        onChange={(e) =>
+                                          handleEditSpecialtyRate(
+                                            spec.service_id,
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-20"
+                                      />
+                                      <span>%</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          handleRemoveEditSpecialty(
+                                            spec.service_id
+                                          )
+                                        }
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          onClick={handleSaveEditEmployee}
+                          className="w-full"
+                        >
+                          Salvar Alterações
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
                 <Button variant="outline" size="sm">
                   <DollarSign className="h-3 w-3" />
                 </Button>
@@ -382,7 +747,9 @@ export default function Employees() {
       <Card>
         <CardHeader>
           <CardTitle>Resumo de Comissões - Este Mês</CardTitle>
-          <CardDescription>Total de comissões devidas aos funcionários</CardDescription>
+          <CardDescription>
+            Total de comissões devidas aos funcionários
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">

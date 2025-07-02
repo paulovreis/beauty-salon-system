@@ -1,4 +1,4 @@
-import { body, query, validationResult } from 'express-validator';
+import { body, query, param, validationResult } from 'express-validator';
 
 const validationMiddleware = (req, res, next) => {
     const errors = validationResult(req);
@@ -68,6 +68,132 @@ export const validadeResetPassword = [
         .isLength({ min: 6 })
         .withMessage('New password must be at least 6 characters long'),
     validationMiddleware
+];
+
+export const validateGetServiceById = [
+    param('id')
+        .isInt()
+        .withMessage('ID do serviço deve ser um inteiro'),
+    validationMiddleware
+];
+
+export const validateGetServiceByName = [
+    query('name')
+        .isString()
+        .notEmpty()
+        .withMessage('Nome é obrigatório'),
+    validationMiddleware
+];
+
+export const validateCreateService = [
+    body('name')
+        .isString()
+        .notEmpty()
+        .withMessage('Nome é obrigatório'),
+    body('description')
+        .optional()
+        .isString()
+        .withMessage('Descrição deve ser uma string'),
+    body('profit_margin')
+        .optional()
+        .isNumeric()
+        .withMessage('Margem de lucro deve ser um número'),
+    body('category_id')
+        .isInt()
+        .withMessage('ID da categoria deve ser um inteiro'),
+    body('base_cost')
+        .isNumeric()
+        .withMessage('Custo base deve ser um número'),
+    body('recommended_price')
+        .isNumeric()
+        .withMessage('Preço recomendado deve ser um número'),
+    body('duration_minutes')
+        .isInt({ min: 1 })
+        .withMessage('Duração deve ser um inteiro positivo'),
+    validationMiddleware
+];
+
+export const validateUpdateService = [
+    body('name')
+        .optional()
+        .isString()
+        .notEmpty()
+        .withMessage('Nome é obrigatório'),
+    body('description')
+        .optional()
+        .isString()
+        .withMessage('Descrição deve ser uma string'),
+    body('profit_margin')
+        .optional()
+        .isNumeric()
+        .withMessage('Margem de lucro deve ser um número'),
+    body('category_id')
+        .optional()
+        .isInt()
+        .withMessage('ID da categoria deve ser um inteiro'),
+    body('base_cost')
+        .optional()
+        .isNumeric()
+        .withMessage('Custo base deve ser um número'),
+    body('recommended_price')
+        .optional()
+        .isNumeric()
+        .withMessage('Preço recomendado deve ser um número'),
+    body('duration_minutes')
+        .optional()
+        .isInt({ min: 1 })
+        .withMessage('Duração deve ser um inteiro positivo'),
+    body('is_active')
+        .optional()
+        .isBoolean()
+        .withMessage('O campo is_active deve ser booleano'),
+    validationMiddleware
+];
+
+export const validateAddServiceEspecialty = [
+    body('employee_id')
+        .isInt()
+        .withMessage('ID do funcionário deve ser um inteiro'),
+    body('service_id')
+        .isInt()
+        .withMessage('ID do serviço deve ser um inteiro'),
+    body('commission_rate')
+        .isNumeric()
+        .withMessage('Taxa de comissão deve ser um número'),
+    validationMiddleware
+];
+
+export const updateServiceEspecialty = [
+    body('commission_rate')
+        .isNumeric()
+        .withMessage('Taxa de comissão deve ser um número'),
+    param('specialtyId')
+        .isInt()
+        .withMessage('ID da especialidade deve ser um inteiro'),
+    param('id')
+        .isInt()
+        .withMessage('ID do serviço deve ser um inteiro'),
+    validationMiddleware
+];
+
+export const validateGetServicesByCategory = [
+    param('categoryId')
+        .isInt()
+        .withMessage('ID da categoria deve ser um inteiro'),
+    validationMiddleware
+];
+
+export const validateCategoryCreate = [
+  body('name').isString().notEmpty().withMessage('Nome é obrigatório'),
+  body('description').optional().isString().withMessage('Descrição deve ser uma string'),
+];
+export const validateCategoryUpdate = [
+  body('name').optional().isString().notEmpty().withMessage('Nome é obrigatório'),
+  body('description').optional().isString().withMessage('Descrição deve ser uma string'),
+  param('id').isInt().withMessage('ID da categoria deve ser um inteiro'),
+];
+export const validateCategoryId = [
+  param('id').isInt().withMessage('ID da categoria deve ser um inteiro'),
 ];
 
 export default validationMiddleware;

@@ -1,10 +1,16 @@
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { Button } from "./ui/button"
-import { Input } from "./ui/input"
-import { Label } from "./ui/label"
-import { Badge } from "./ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -12,44 +18,33 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "./ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { Textarea } from "./ui/textarea"
-import { Plus, Edit, Trash2, Calculator } from "lucide-react"
+} from "./ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Textarea } from "./ui/textarea";
+import { Plus, Edit, Trash2, Calculator } from "lucide-react";
 
 export default function ServicesProducts() {
-  const [services, setServices] = useState([
-    {
-      id: 1,
-      name: "Coloração de Cabelo",
-      category: "Cabelo",
-      baseCost: 45,
-      recommendedPrice: 180,
-      profitMargin: 75,
-      duration: 120,
-      description: "Serviço profissional de coloração de cabelo",
-    },
-    {
-      id: 2,
-      name: "Tratamento Progressiva",
-      category: "Cabelo",
-      baseCost: 80,
-      recommendedPrice: 250,
-      profitMargin: 68,
-      duration: 180,
-      description: "Tratamento de alisamento capilar",
-    },
-    {
-      id: 3,
-      name: "Manicure",
-      category: "Unhas",
-      baseCost: 15,
-      recommendedPrice: 35,
-      profitMargin: 57,
-      duration: 45,
-      description: "Serviço completo de cuidado com as unhas",
-    },
-  ])
+  const baseUrl = "http://localhost:5000"; // Base URL for API requests
+  const [services, setServices] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [newService, setNewService] = useState({
+    name: "",
+    category_id: "",
+    base_cost: "",
+    profit_margin: "",
+    duration_minutes: "",
+    description: "",
+  });
+  const [recommendedPrice, setRecommendedPrice] = useState("");
 
   const [products, setProducts] = useState([
     {
@@ -72,63 +67,240 @@ export default function ServicesProducts() {
       stock: 25,
       supplier: "Nail Pro Ltd.",
     },
-  ])
-
-  const [newService, setNewService] = useState({
-    name: "",
-    category: "",
-    baseCost: "",
-    desiredProfitMargin: "",
-    duration: "",
-    description: "",
-  })
-
+  ]);
   const [newProduct, setNewProduct] = useState({
     name: "",
     category: "",
     cost: "",
     desiredProfitMargin: "",
     supplier: "",
-  })
+  });
+  const [recommendedProductPrice, setRecommendedProductPrice] = useState("");
+  // Estado para edição de serviço
+  const [editingService, setEditingService] = useState(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: "", description: "" });
+  // Atualiza o preço recomendado do produto sempre que cost ou desiredProfitMargin mudarem
+  useEffect(() => {
+    async function fetchProductPrice() {
+      if (newProduct.cost && newProduct.desiredProfitMargin) {
+        const price = await calculateRecommendedPrice(
+          Number(newProduct.cost),
+          Number(newProduct.desiredProfitMargin)
+        );
+        setRecommendedProductPrice(price);
+      } else {
+        setRecommendedProductPrice("");
+      }
+    }
+    fetchProductPrice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newProduct.cost, newProduct.desiredProfitMargin]);
 
-  const calculateRecommendedPrice = (baseCost, profitMargin) => {
-    return (baseCost / (1 - profitMargin / 100)).toFixed(2)
+  useEffect(() => {
+    fetchServices();
+    fetchCategories();
+  }, []);
+
+  // Atualiza o preço recomendado sempre que base_cost ou profit_margin mudarem
+  useEffect(() => {
+    async function fetchPrice() {
+      if (newService.base_cost && newService.profit_margin) {
+        const price = await calculateRecommendedPrice(
+          Number(newService.base_cost),
+          Number(newService.profit_margin)
+        );
+        setRecommendedPrice(price);
+      } else {
+        setRecommendedPrice("");
+      }
+    }
+    fetchPrice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newService.base_cost, newService.profit_margin]);
+
+  async function fetchServices() {
+    setLoading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Erro ao buscar serviços");
+      const data = await res.json();
+      setServices(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const handleAddService = () => {
-    if (newService.name && newService.baseCost && newService.desiredProfitMargin) {
-      const baseCost = Number.parseFloat(newService.baseCost)
-      const profitMargin = Number.parseFloat(newService.desiredProfitMargin)
-      const recommendedPrice = Number.parseFloat(calculateRecommendedPrice(baseCost, profitMargin))
+  async function fetchCategories() {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/categories`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Erro ao buscar categorias");
+      const data = await res.json();
+      setCategories(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
-      const service = {
-        id: services.length + 1,
-        name: newService.name,
-        category: newService.category,
-        baseCost,
-        recommendedPrice,
-        profitMargin,
-        duration: Number.parseInt(newService.duration),
-        description: newService.description,
-      }
+  async function calculateRecommendedPrice(base_cost, profit_margin) {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/calculate-price`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          base_cost: Number(base_cost),
+          profit_margin: Number(profit_margin),
+        }),
+      });
+      if (!res.ok) throw new Error("Erro ao calcular preço");
+      const data = await res.json();
+      return data.price;
+    } catch (e) {
+      setError(e.message);
+      return "";
+    }
+  }
 
-      setServices([...services, service])
+  async function handleAddService() {
+    setError("");
+    if (
+      !newService.name ||
+      !newService.category_id ||
+      !newService.base_cost ||
+      !newService.profit_margin
+    ) {
+      setError("Preencha todos os campos obrigatórios!");
+      return;
+    }
+    setLoading(true);
+    try {
+      const recommended_price = await calculateRecommendedPrice(
+        newService.base_cost,
+        newService.profit_margin
+      );
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newService.name,
+          category_id: Number(newService.category_id),
+          base_cost: Number(newService.base_cost),
+          profit_margin: Number(newService.profit_margin),
+          recommended_price: Number(recommended_price),
+          duration_minutes: Number(newService.duration_minutes),
+          description: newService.description,
+        }),
+      });
+      if (!res.ok) throw new Error("Erro ao adicionar serviço");
       setNewService({
         name: "",
-        category: "",
-        baseCost: "",
-        desiredProfitMargin: "",
-        duration: "",
+        category_id: "",
+        base_cost: "",
+        profit_margin: "",
+        duration_minutes: "",
         description: "",
-      })
+      });
+      fetchServices();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Abrir modal de edição
+  function handleEditService(service) {
+    // Tenta obter o category_id pelo nome da categoria
+    let categoryId = service.category_id;
+    if (!categoryId && (service.category || service.category_name)) {
+      const found = categories.find(
+        (cat) =>
+          cat.name === service.category || cat.name === service.category_name
+      );
+      if (found) categoryId = found.id;
+    }
+    setEditingService({
+      ...service,
+      category_id: categoryId ? String(categoryId) : "",
+    });
+    setShowEditDialog(true);
+  }
+
+  // Salvar edição
+  async function handleSaveEditService() {
+    if (
+      !editingService.name ||
+      !editingService.category_id ||
+      !editingService.base_cost ||
+      !editingService.profit_margin
+    ) {
+      setError("Preencha todos os campos obrigatórios!");
+      return;
+    }
+    setLoading(true);
+    try {
+      // Calcula preço recomendado atualizado
+      const recommended_price = await calculateRecommendedPrice(
+        editingService.base_cost,
+        editingService.profit_margin
+      );
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/${editingService.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: editingService.name,
+          category_id: Number(editingService.category_id),
+          base_cost: Number(editingService.base_cost),
+          profit_margin: Number(editingService.profit_margin),
+          recommended_price: Number(recommended_price),
+          duration_minutes: Number(editingService.duration_minutes),
+          description: editingService.description,
+          is_active:
+            editingService.is_active !== undefined
+              ? editingService.is_active
+              : true,
+        }),
+      });
+      if (!res.ok) throw new Error("Erro ao atualizar serviço");
+      setShowEditDialog(false);
+      setEditingService(null);
+      fetchServices();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
   const handleAddProduct = () => {
     if (newProduct.name && newProduct.cost && newProduct.desiredProfitMargin) {
-      const cost = Number.parseFloat(newProduct.cost)
-      const profitMargin = Number.parseFloat(newProduct.desiredProfitMargin)
-      const sellingPrice = Number.parseFloat(calculateRecommendedPrice(cost, profitMargin))
+      const cost = Number.parseFloat(newProduct.cost);
+      const profitMargin = Number.parseFloat(newProduct.desiredProfitMargin);
+      const sellingPrice = Number.parseFloat(
+        calculateRecommendedPrice(cost, profitMargin)
+      );
 
       const product = {
         id: products.length + 1,
@@ -139,16 +311,37 @@ export default function ServicesProducts() {
         profitMargin,
         stock: 0,
         supplier: newProduct.supplier,
-      }
+      };
 
-      setProducts([...products, product])
+      setProducts([...products, product]);
       setNewProduct({
         name: "",
         category: "",
         cost: "",
         desiredProfitMargin: "",
         supplier: "",
-      })
+      });
+    }
+  };
+
+  async function handleAddCategory() {
+    if (!newCategory.name) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${baseUrl}/services/categories`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(newCategory),
+      });
+      if (!res.ok) throw new Error("Erro ao adicionar categoria");
+      setNewCategory({ name: "", description: "" });
+      setShowCategoryDialog(false);
+      fetchCategories();
+    } catch (e) {
+      alert(e.message);
     }
   }
 
@@ -157,9 +350,50 @@ export default function ServicesProducts() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold">Serviços & Produtos</h2>
-          <p className="text-muted-foreground">Gerencie os serviços do seu salão e produtos para revenda</p>
+          <p className="text-muted-foreground">
+            Gerencie os serviços do seu salão e produtos para revenda
+          </p>
         </div>
+        <Button variant="outline" onClick={() => setShowCategoryDialog(true)}>
+          + Adicionar Categoria
+        </Button>
       </div>
+      {/* Modal de categoria */}
+      {showCategoryDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">Nova Categoria</h3>
+            <div className="space-y-2">
+              <Label>Nome</Label>
+              <Input
+                value={newCategory.name}
+                onChange={(e) =>
+                  setNewCategory({ ...newCategory, name: e.target.value })
+                }
+              />
+              <Label>Descrição</Label>
+              <Textarea
+                value={newCategory.description}
+                onChange={(e) =>
+                  setNewCategory({
+                    ...newCategory,
+                    description: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="flex gap-2 mt-4 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowCategoryDialog(false)}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleAddCategory}>Salvar</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="services" className="space-y-6">
         <TabsList>
@@ -180,7 +414,9 @@ export default function ServicesProducts() {
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>Adicionar Novo Serviço</DialogTitle>
-                  <DialogDescription>Criar um novo serviço com cálculo automático de preço</DialogDescription>
+                  <DialogDescription>
+                    Criar um novo serviço com cálculo automático de preço
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
@@ -188,24 +424,29 @@ export default function ServicesProducts() {
                     <Input
                       id="serviceName"
                       value={newService.name}
-                      onChange={(e) => setNewService({ ...newService, name: e.target.value })}
+                      onChange={(e) =>
+                        setNewService({ ...newService, name: e.target.value })
+                      }
                       placeholder="ex: Coloração de Cabelo"
                     />
                   </div>
                   <div>
                     <Label htmlFor="serviceCategory">Categoria</Label>
                     <Select
-                      value={newService.category}
-                      onValueChange={(value) => setNewService({ ...newService, category: value })}
+                      value={newService.category_id}
+                      onValueChange={(value) =>
+                        setNewService({ ...newService, category_id: value })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione a categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Hair">Cabelo</SelectItem>
-                        <SelectItem value="Nails">Unhas</SelectItem>
-                        <SelectItem value="Skin">Cuidados com a Pele</SelectItem>
-                        <SelectItem value="Makeup">Maquiagem</SelectItem>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -215,8 +456,13 @@ export default function ServicesProducts() {
                       <Input
                         id="baseCost"
                         type="number"
-                        value={newService.baseCost}
-                        onChange={(e) => setNewService({ ...newService, baseCost: e.target.value })}
+                        value={newService.base_cost}
+                        onChange={(e) =>
+                          setNewService({
+                            ...newService,
+                            base_cost: e.target.value,
+                          })
+                        }
                         placeholder="45.00"
                       />
                     </div>
@@ -225,8 +471,13 @@ export default function ServicesProducts() {
                       <Input
                         id="profitMargin"
                         type="number"
-                        value={newService.desiredProfitMargin}
-                        onChange={(e) => setNewService({ ...newService, desiredProfitMargin: e.target.value })}
+                        value={newService.profit_margin}
+                        onChange={(e) =>
+                          setNewService({
+                            ...newService,
+                            profit_margin: e.target.value,
+                          })
+                        }
                         placeholder="75"
                       />
                     </div>
@@ -236,8 +487,13 @@ export default function ServicesProducts() {
                     <Input
                       id="duration"
                       type="number"
-                      value={newService.duration}
-                      onChange={(e) => setNewService({ ...newService, duration: e.target.value })}
+                      value={newService.duration_minutes}
+                      onChange={(e) =>
+                        setNewService({
+                          ...newService,
+                          duration_minutes: e.target.value,
+                        })
+                      }
                       placeholder="120"
                     />
                   </div>
@@ -246,20 +502,21 @@ export default function ServicesProducts() {
                     <Textarea
                       id="description"
                       value={newService.description}
-                      onChange={(e) => setNewService({ ...newService, description: e.target.value })}
+                      onChange={(e) =>
+                        setNewService({
+                          ...newService,
+                          description: e.target.value,
+                        })
+                      }
                       placeholder="Descrição do serviço..."
                     />
                   </div>
-                  {newService.baseCost && newService.desiredProfitMargin && (
+                  {newService.base_cost && newService.profit_margin && (
                     <div className="p-3 bg-green-50 rounded-lg">
                       <div className="flex items-center gap-2 text-green-700">
                         <Calculator className="h-4 w-4" />
                         <span className="font-medium">
-                          Preço Recomendado: R$
-                          {calculateRecommendedPrice(
-                            Number.parseFloat(newService.baseCost),
-                            Number.parseFloat(newService.desiredProfitMargin),
-                          )}
+                          Preço Recomendado: R${recommendedPrice}
                         </span>
                       </div>
                     </div>
@@ -281,27 +538,43 @@ export default function ServicesProducts() {
                       <CardTitle className="text-lg">{service.name}</CardTitle>
                       <CardDescription>{service.category}</CardDescription>
                     </div>
-                    <Badge variant="secondary">{service.duration}min</Badge>
+                    <Badge variant="secondary">
+                      {service.duration_minutes}min
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Custo Base:</span>
-                      <span className="font-medium">R${service.baseCost}</span>
+                      <span className="text-sm text-muted-foreground">
+                        Custo Base:
+                      </span>
+                      <span className="font-medium">R${service.base_cost}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Preço Recomendado:</span>
-                      <span className="font-medium text-green-600">R${service.recommendedPrice}</span>
+                      <span className="text-sm text-muted-foreground">
+                        Preço Recomendado:
+                      </span>
+                      <span className="font-medium text-green-600">
+                        R${service.recommended_price}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Margem de Lucro:</span>
-                      <Badge variant="outline">{service.profitMargin}%</Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Margem de Lucro:
+                      </span>
+                      <Badge variant="outline">{service.profit_margin}%</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">{service.description}</p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {service.description}
+                    </p>
                   </div>
                   <div className="flex gap-2 mt-4">
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditService(service)}
+                    >
                       <Edit className="h-3 w-3" />
                     </Button>
                     <Button variant="outline" size="sm">
@@ -311,6 +584,102 @@ export default function ServicesProducts() {
                 </CardContent>
               </Card>
             ))}
+            {/* Modal de edição de serviço */}
+            {showEditDialog && editingService && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+                  <h3 className="text-lg font-semibold mb-2">Editar Serviço</h3>
+                  <div className="space-y-2">
+                    <Label>Nome</Label>
+                    <Input
+                      value={editingService.name}
+                      onChange={(e) =>
+                        setEditingService({
+                          ...editingService,
+                          name: e.target.value,
+                        })
+                      }
+                    />
+                    <Label>Categoria</Label>
+                    <Select
+                      value={editingService.category_id ?? ""}
+                      onValueChange={(value) =>
+                        setEditingService({
+                          ...editingService,
+                          category_id: value,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a categoria" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Label>Custo Base (R$)</Label>
+                    <Input
+                      type="number"
+                      value={editingService.base_cost}
+                      onChange={(e) =>
+                        setEditingService({
+                          ...editingService,
+                          base_cost: e.target.value,
+                        })
+                      }
+                    />
+                    <Label>Margem de Lucro (%)</Label>
+                    <Input
+                      type="number"
+                      value={editingService.profit_margin}
+                      onChange={(e) =>
+                        setEditingService({
+                          ...editingService,
+                          profit_margin: e.target.value,
+                        })
+                      }
+                    />
+                    <Label>Duração (minutos)</Label>
+                    <Input
+                      type="number"
+                      value={editingService.duration_minutes}
+                      onChange={(e) =>
+                        setEditingService({
+                          ...editingService,
+                          duration_minutes: e.target.value,
+                        })
+                      }
+                    />
+                    <Label>Descrição</Label>
+                    <Textarea
+                      value={editingService.description}
+                      onChange={(e) =>
+                        setEditingService({
+                          ...editingService,
+                          description: e.target.value,
+                        })
+                      }
+                    />
+                    <div className="flex gap-2 mt-4 justify-end">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowEditDialog(false);
+                          setEditingService(null);
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button onClick={handleSaveEditService}>Salvar</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -327,7 +696,9 @@ export default function ServicesProducts() {
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>Adicionar Novo Produto</DialogTitle>
-                  <DialogDescription>Adicionar um produto para revenda com preço automático</DialogDescription>
+                  <DialogDescription>
+                    Adicionar um produto para revenda com preço automático
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
@@ -335,7 +706,9 @@ export default function ServicesProducts() {
                     <Input
                       id="productName"
                       value={newProduct.name}
-                      onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                      onChange={(e) =>
+                        setNewProduct({ ...newProduct, name: e.target.value })
+                      }
                       placeholder="ex: Tintura de Cabelo - Loiro"
                     />
                   </div>
@@ -343,15 +716,23 @@ export default function ServicesProducts() {
                     <Label htmlFor="productCategory">Categoria</Label>
                     <Select
                       value={newProduct.category}
-                      onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}
+                      onValueChange={(value) =>
+                        setNewProduct({ ...newProduct, category: value })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione a categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Hair Products">Produtos para Cabelo</SelectItem>
-                        <SelectItem value="Nail Products">Produtos para Unhas</SelectItem>
-                        <SelectItem value="Skin Care">Cuidados com a Pele</SelectItem>
+                        <SelectItem value="Hair Products">
+                          Produtos para Cabelo
+                        </SelectItem>
+                        <SelectItem value="Nail Products">
+                          Produtos para Unhas
+                        </SelectItem>
+                        <SelectItem value="Skin Care">
+                          Cuidados com a Pele
+                        </SelectItem>
                         <SelectItem value="Tools">Ferramentas</SelectItem>
                       </SelectContent>
                     </Select>
@@ -363,7 +744,9 @@ export default function ServicesProducts() {
                         id="productCost"
                         type="number"
                         value={newProduct.cost}
-                        onChange={(e) => setNewProduct({ ...newProduct, cost: e.target.value })}
+                        onChange={(e) =>
+                          setNewProduct({ ...newProduct, cost: e.target.value })
+                        }
                         placeholder="25.00"
                       />
                     </div>
@@ -373,7 +756,12 @@ export default function ServicesProducts() {
                         id="productMargin"
                         type="number"
                         value={newProduct.desiredProfitMargin}
-                        onChange={(e) => setNewProduct({ ...newProduct, desiredProfitMargin: e.target.value })}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            desiredProfitMargin: e.target.value,
+                          })
+                        }
                         placeholder="44"
                       />
                     </div>
@@ -383,20 +771,21 @@ export default function ServicesProducts() {
                     <Input
                       id="supplier"
                       value={newProduct.supplier}
-                      onChange={(e) => setNewProduct({ ...newProduct, supplier: e.target.value })}
+                      onChange={(e) =>
+                        setNewProduct({
+                          ...newProduct,
+                          supplier: e.target.value,
+                        })
+                      }
                       placeholder="Beauty Supply Co."
                     />
                   </div>
-                  {newProduct.cost && newProduct.desiredProfitMargin && (
+                  {recommendedProductPrice && (
                     <div className="p-3 bg-green-50 rounded-lg">
                       <div className="flex items-center gap-2 text-green-700">
                         <Calculator className="h-4 w-4" />
                         <span className="font-medium">
-                          Preço Recomendado: R$
-                          {calculateRecommendedPrice(
-                            Number.parseFloat(newProduct.cost),
-                            Number.parseFloat(newProduct.desiredProfitMargin),
-                          )}
+                          Preço Recomendado: R${recommendedProductPrice}
                         </span>
                       </div>
                     </div>
@@ -418,25 +807,39 @@ export default function ServicesProducts() {
                       <CardTitle className="text-lg">{product.name}</CardTitle>
                       <CardDescription>{product.category}</CardDescription>
                     </div>
-                    <Badge variant={product.stock > 10 ? "secondary" : "destructive"}>Estoque: {product.stock}</Badge>
+                    <Badge
+                      variant={product.stock > 10 ? "secondary" : "destructive"}
+                    >
+                      Estoque: {product.stock}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Custo:</span>
+                      <span className="text-sm text-muted-foreground">
+                        Custo:
+                      </span>
                       <span className="font-medium">R${product.cost}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Preço de Venda:</span>
-                      <span className="font-medium text-green-600">R${product.sellingPrice}</span>
+                      <span className="text-sm text-muted-foreground">
+                        Preço de Venda:
+                      </span>
+                      <span className="font-medium text-green-600">
+                        R${product.sellingPrice}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Margem de Lucro:</span>
+                      <span className="text-sm text-muted-foreground">
+                        Margem de Lucro:
+                      </span>
                       <Badge variant="outline">{product.profitMargin}%</Badge>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Fornecedor:</span>
+                      <span className="text-sm text-muted-foreground">
+                        Fornecedor:
+                      </span>
                       <span className="text-xs">{product.supplier}</span>
                     </div>
                   </div>
@@ -455,5 +858,5 @@ export default function ServicesProducts() {
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }

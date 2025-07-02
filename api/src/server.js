@@ -6,6 +6,7 @@ import authRoutes from './routes/authRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import employeesRoutes from './routes/employeesRoutes.js';
+import serviceRoutes from './routes/serviceRoutes.js';
 
 dotenv.config();
 
@@ -37,6 +38,11 @@ app.use('/users', userRoutes);
 
 // Rotas de gerenciamento de funcionários
 app.use('/employees', employeesRoutes);
+
+app.use('/services', (req, res, next) => {
+  req.pool = pool; // Disponibiliza o pool para os controllers via req.pool
+  next();
+}, serviceRoutes);
 
 const PORT = process.env.PORT || 5000;
 
