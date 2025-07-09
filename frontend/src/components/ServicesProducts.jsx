@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { axiosWithAuth } from "./api/axiosWithAuth.js";
 import {
   Card,
   CardContent,
@@ -46,57 +47,73 @@ export default function ServicesProducts() {
   });
   const [recommendedPrice, setRecommendedPrice] = useState("");
 
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      name: "Tintura de Cabelo - Loiro",
-      category: "Produtos para Cabelo",
-      cost: 25,
-      sellingPrice: 45,
-      profitMargin: 44,
-      stock: 15,
-      supplier: "Beauty Supply Co.",
-    },
-    {
-      id: 2,
-      name: "Esmalte - Vermelho",
-      category: "Produtos para Unhas",
-      cost: 8,
-      sellingPrice: 18,
-      profitMargin: 56,
-      stock: 25,
-      supplier: "Nail Pro Ltd.",
-    },
-  ]);
+  const [products, setProducts] = useState([]);
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: "",
-    cost: "",
-    desiredProfitMargin: "",
-    supplier: "",
+    category_id: "",
+    sku: "",
+    cost_price: "",
+    selling_price: "",
+    current_stock: "",
+    min_stock_level: "",
+    max_stock_level: "",
+    supplier_name: "",
+    supplier_contact: "",
+    description: "",
   });
-  const [recommendedProductPrice, setRecommendedProductPrice] = useState("");
   // Estado para edição de serviço
   const [editingService, setEditingService] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: "", description: "" });
+  // Estado para aba ativa (deve vir antes de qualquer uso)
+  const [activeTab, setActiveTab] = useState("services");
+
+  // Estado para categorias de produtos
+  const [productCategories, setProductCategories] = useState([]);
+
   // Atualiza o preço recomendado do produto sempre que cost ou desiredProfitMargin mudarem
-  useEffect(() => {
-    async function fetchProductPrice() {
-      if (newProduct.cost && newProduct.desiredProfitMargin) {
-        const price = await calculateRecommendedPrice(
-          Number(newProduct.cost),
-          Number(newProduct.desiredProfitMargin)
-        );
-        setRecommendedProductPrice(price);
-      } else {
-        setRecommendedProductPrice("");
-      }
+  // Se desejar cálculo automático de selling_price, pode-se adicionar lógica aqui
+
+  // Buscar produtos do backend
+  async function fetchProducts() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await axiosWithAuth("/products/", { method: "get" });
+      setProducts(res.data);
+    } catch (e) {
+      setError(e.response?.data?.message || e.message);
+    } finally {
+      setLoading(false);
     }
-    fetchProductPrice();
+  }
+
+  // Buscar categorias de produtos do backend
+  async function fetchProductCategories() {
+    try {
+      const res = await axiosWithAuth("/products/categories", {
+        method: "get",
+      });
+      setProductCategories(res.data);
+    } catch (e) {
+      setError(e.response?.data?.message || e.message);
+    }
+  }
+
+  // Buscar produtos e categorias ao abrir aba products
+  useEffect(() => {
+    if (activeTab === "products") {
+      fetchProducts();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newProduct.cost, newProduct.desiredProfitMargin]);
+  }, [activeTab]);
+
+  // Buscar categorias de produtos ao montar o componente (garante que sempre existam para o select)
+  useEffect(() => {
+    fetchProductCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetchServices();
@@ -124,15 +141,10 @@ export default function ServicesProducts() {
     setLoading(true);
     setError("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Erro ao buscar serviços");
-      const data = await res.json();
-      setServices(data);
+      const res = await axiosWithAuth("/services/", { method: "get" });
+      setServices(res.data);
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.message || e.message);
     } finally {
       setLoading(false);
     }
@@ -140,37 +152,27 @@ export default function ServicesProducts() {
 
   async function fetchCategories() {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/categories`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await axiosWithAuth("/services/categories", {
+        method: "get",
       });
-      if (!res.ok) throw new Error("Erro ao buscar categorias");
-      const data = await res.json();
-      setCategories(data);
+      setCategories(res.data);
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.message || e.message);
     }
   }
 
   async function calculateRecommendedPrice(base_cost, profit_margin) {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/calculate-price`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      const res = await axiosWithAuth("/services/calculate-price", {
+        method: "post",
+        data: {
           base_cost: Number(base_cost),
           profit_margin: Number(profit_margin),
-        }),
+        },
       });
-      if (!res.ok) throw new Error("Erro ao calcular preço");
-      const data = await res.json();
-      return data.price;
+      return res.data.price;
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.message || e.message);
       return "";
     }
   }
@@ -192,14 +194,9 @@ export default function ServicesProducts() {
         newService.base_cost,
         newService.profit_margin
       );
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      await axiosWithAuth("/services/", {
+        method: "post",
+        data: {
           name: newService.name,
           category_id: Number(newService.category_id),
           base_cost: Number(newService.base_cost),
@@ -207,9 +204,8 @@ export default function ServicesProducts() {
           recommended_price: Number(recommended_price),
           duration_minutes: Number(newService.duration_minutes),
           description: newService.description,
-        }),
+        },
       });
-      if (!res.ok) throw new Error("Erro ao adicionar serviço");
       setNewService({
         name: "",
         category_id: "",
@@ -220,7 +216,7 @@ export default function ServicesProducts() {
       });
       fetchServices();
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.message || e.message);
     } finally {
       setLoading(false);
     }
@@ -262,14 +258,9 @@ export default function ServicesProducts() {
         editingService.base_cost,
         editingService.profit_margin
       );
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/${editingService.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      await axiosWithAuth(`/services/${editingService.id}`, {
+        method: "put",
+        data: {
           name: editingService.name,
           category_id: Number(editingService.category_id),
           base_cost: Number(editingService.base_cost),
@@ -281,9 +272,8 @@ export default function ServicesProducts() {
             editingService.is_active !== undefined
               ? editingService.is_active
               : true,
-        }),
+        },
       });
-      if (!res.ok) throw new Error("Erro ao atualizar serviço");
       setShowEditDialog(false);
       setEditingService(null);
       fetchServices();
@@ -294,54 +284,88 @@ export default function ServicesProducts() {
     }
   }
 
-  const handleAddProduct = () => {
-    if (newProduct.name && newProduct.cost && newProduct.desiredProfitMargin) {
-      const cost = Number.parseFloat(newProduct.cost);
-      const profitMargin = Number.parseFloat(newProduct.desiredProfitMargin);
-      const sellingPrice = Number.parseFloat(
-        calculateRecommendedPrice(cost, profitMargin)
-      );
-
-      const product = {
-        id: products.length + 1,
-        name: newProduct.name,
-        category: newProduct.category,
-        cost,
-        sellingPrice,
-        profitMargin,
-        stock: 0,
-        supplier: newProduct.supplier,
-      };
-
-      setProducts([...products, product]);
+  async function handleAddProduct() {
+    setError("");
+    if (
+      !newProduct.name ||
+      !newProduct.category_id ||
+      !newProduct.cost_price ||
+      !newProduct.selling_price
+    ) {
+      setError("Preencha todos os campos obrigatórios!");
+      return;
+    }
+    setLoading(true);
+    try {
+      await axiosWithAuth("/products/", {
+        method: "post",
+        data: {
+          name: newProduct.name,
+          category_id: Number(newProduct.category_id),
+          sku: newProduct.sku,
+          cost_price: Number(newProduct.cost_price),
+          selling_price: Number(newProduct.selling_price),
+          current_stock: newProduct.current_stock
+            ? Number(newProduct.current_stock)
+            : 0,
+          min_stock_level: newProduct.min_stock_level
+            ? Number(newProduct.min_stock_level)
+            : 0,
+          max_stock_level: newProduct.max_stock_level
+            ? Number(newProduct.max_stock_level)
+            : 0,
+          supplier_name: newProduct.supplier_name,
+          supplier_contact: newProduct.supplier_contact,
+          description: newProduct.description,
+        },
+      });
       setNewProduct({
         name: "",
-        category: "",
-        cost: "",
-        desiredProfitMargin: "",
-        supplier: "",
+        category_id: "",
+        sku: "",
+        cost_price: "",
+        selling_price: "",
+        current_stock: "",
+        min_stock_level: "",
+        max_stock_level: "",
+        supplier_name: "",
+        supplier_contact: "",
+        description: "",
       });
+      fetchProducts();
+    } catch (e) {
+      setError(e.response?.data?.message || e.message);
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
   async function handleAddCategory() {
     if (!newCategory.name) return;
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${baseUrl}/services/categories`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newCategory),
-      });
-      if (!res.ok) throw new Error("Erro ao adicionar categoria");
-      setNewCategory({ name: "", description: "" });
-      setShowCategoryDialog(false);
-      fetchCategories();
-    } catch (e) {
-      alert(e.message);
+    if (activeTab === "services") {
+      try {
+        await axiosWithAuth("/services/categories", {
+          method: "post",
+          data: newCategory,
+        });
+        setNewCategory({ name: "", description: "" });
+        setShowCategoryDialog(false);
+        fetchCategories();
+      } catch (e) {
+        alert(e.response?.data?.message || e.message);
+      }
+    }else{
+      try {
+        await axiosWithAuth("/products/categories", {
+          method: "post",
+          data: newCategory,
+        });
+        setNewCategory({ name: "", description: "" });
+        setShowCategoryDialog(false);
+        fetchProductCategories();
+      } catch (e) {
+        alert(e.response?.data?.message || e.message);
+      }
     }
   }
 
@@ -395,7 +419,11 @@ export default function ServicesProducts() {
         </div>
       )}
 
-      <Tabs defaultValue="services" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
         <TabsList>
           <TabsTrigger value="services">Serviços</TabsTrigger>
           <TabsTrigger value="products">Produtos</TabsTrigger>
@@ -715,81 +743,152 @@ export default function ServicesProducts() {
                   <div>
                     <Label htmlFor="productCategory">Categoria</Label>
                     <Select
-                      value={newProduct.category}
+                      value={newProduct.category_id}
                       onValueChange={(value) =>
-                        setNewProduct({ ...newProduct, category: value })
+                        setNewProduct({ ...newProduct, category_id: value })
                       }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione a categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Hair Products">
-                          Produtos para Cabelo
-                        </SelectItem>
-                        <SelectItem value="Nail Products">
-                          Produtos para Unhas
-                        </SelectItem>
-                        <SelectItem value="Skin Care">
-                          Cuidados com a Pele
-                        </SelectItem>
-                        <SelectItem value="Tools">Ferramentas</SelectItem>
+                        {productCategories.map((category) => (
+                          <SelectItem
+                            key={category.id}
+                            value={String(category.id)}
+                          >
+                            {category.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
+                      <Label htmlFor="productSku">SKU</Label>
+                      <Input
+                        id="productSku"
+                        value={newProduct.sku}
+                        onChange={(e) =>
+                          setNewProduct({ ...newProduct, sku: e.target.value })
+                        }
+                        placeholder="SKU123"
+                      />
+                    </div>
+                    <div>
                       <Label htmlFor="productCost">Custo (R$)</Label>
                       <Input
                         id="productCost"
                         type="number"
-                        value={newProduct.cost}
+                        value={newProduct.cost_price}
                         onChange={(e) =>
-                          setNewProduct({ ...newProduct, cost: e.target.value })
+                          setNewProduct({
+                            ...newProduct,
+                            cost_price: e.target.value,
+                          })
                         }
                         placeholder="25.00"
                       />
                     </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="productMargin">Margem de Lucro (%)</Label>
+                      <Label htmlFor="productSelling">
+                        Preço de Venda (R$)
+                      </Label>
                       <Input
-                        id="productMargin"
+                        id="productSelling"
                         type="number"
-                        value={newProduct.desiredProfitMargin}
+                        value={newProduct.selling_price}
                         onChange={(e) =>
                           setNewProduct({
                             ...newProduct,
-                            desiredProfitMargin: e.target.value,
+                            selling_price: e.target.value,
                           })
                         }
-                        placeholder="44"
+                        placeholder="40.00"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="productStock">Estoque Atual</Label>
+                      <Input
+                        id="productStock"
+                        type="number"
+                        value={newProduct.current_stock}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            current_stock: e.target.value,
+                          })
+                        }
+                        placeholder="10"
                       />
                     </div>
                   </div>
-                  <div>
-                    <Label htmlFor="supplier">Fornecedor</Label>
-                    <Input
-                      id="supplier"
-                      value={newProduct.supplier}
-                      onChange={(e) =>
-                        setNewProduct({
-                          ...newProduct,
-                          supplier: e.target.value,
-                        })
-                      }
-                      placeholder="Beauty Supply Co."
-                    />
-                  </div>
-                  {recommendedProductPrice && (
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2 text-green-700">
-                        <Calculator className="h-4 w-4" />
-                        <span className="font-medium">
-                          Preço Recomendado: R${recommendedProductPrice}
-                        </span>
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="minStock">Estoque Mínimo</Label>
+                      <Input
+                        id="minStock"
+                        type="number"
+                        value={newProduct.min_stock_level}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            min_stock_level: e.target.value,
+                          })
+                        }
+                        placeholder="2"
+                      />
                     </div>
-                  )}
+                    <div>
+                      <Label htmlFor="maxStock">Estoque Máximo</Label>
+                      <Input
+                        id="maxStock"
+                        type="number"
+                        value={newProduct.max_stock_level}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            max_stock_level: e.target.value,
+                          })
+                        }
+                        placeholder="100"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="supplierName">Fornecedor</Label>
+                      <Input
+                        id="supplierName"
+                        value={newProduct.supplier_name}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            supplier_name: e.target.value,
+                          })
+                        }
+                        placeholder="Beauty Supply Co."
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="supplierContact">
+                        Contato Fornecedor
+                      </Label>
+                      <Input
+                        id="supplierContact"
+                        value={newProduct.supplier_contact}
+                        onChange={(e) =>
+                          setNewProduct({
+                            ...newProduct,
+                            supplier_contact: e.target.value,
+                          })
+                        }
+                        placeholder="(11) 99999-9999"
+                      />
+                    </div>
+                  </div>
                   <Button onClick={handleAddProduct} className="w-full">
                     Adicionar Produto
                   </Button>
@@ -805,12 +904,14 @@ export default function ServicesProducts() {
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-lg">{product.name}</CardTitle>
-                      <CardDescription>{product.category}</CardDescription>
+                      <CardDescription>{product.category_name}</CardDescription>
                     </div>
                     <Badge
-                      variant={product.stock > 10 ? "secondary" : "destructive"}
+                      variant={
+                        product.current_stock > 10 ? "secondary" : "destructive"
+                      }
                     >
-                      Estoque: {product.stock}
+                      Estoque: {product.current_stock ?? 0}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -818,29 +919,47 @@ export default function ServicesProducts() {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">
+                        SKU:
+                      </span>
+                      <span className="font-medium">{product.sku}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">
                         Custo:
                       </span>
-                      <span className="font-medium">R${product.cost}</span>
+                      <span className="font-medium">
+                        R${product.cost_price}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">
                         Preço de Venda:
                       </span>
                       <span className="font-medium text-green-600">
-                        R${product.sellingPrice}
+                        R${product.selling_price}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">
-                        Margem de Lucro:
+                        Estoque:
                       </span>
-                      <Badge variant="outline">{product.profitMargin}%</Badge>
+                      <span className="font-medium">
+                        {product.current_stock}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">
                         Fornecedor:
                       </span>
-                      <span className="text-xs">{product.supplier}</span>
+                      <span className="font-medium">
+                        {product.supplier_name}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        Descrição:
+                      </span>
+                      <span className="text-xs">{product.description}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 mt-4">

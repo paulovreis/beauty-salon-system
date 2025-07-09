@@ -27,29 +27,9 @@ import {
 } from "./ui/select";
 import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar";
 import { Plus, Edit, Trash2, DollarSign } from "lucide-react";
+import { axiosWithAuth } from "./api/axiosWithAuth.js";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
-// Função global de fetchWithAuth (deve estar disponível no projeto)
-async function fetchWithAuth(url, options = {}) {
-  let token = localStorage.getItem("token");
-  if (!token) {
-    window.location.href = "/login";
-    throw new Error("Usuário não autenticado");
-  }
-  let response = await fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (response.status === 403 || response.status === 401) {
-    localStorage.removeItem("token");
-    window.location.href = "/login";
-    throw new Error("Sessão expirada ou acesso negado");
-  }
-  return response;
-}
 
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
@@ -74,13 +54,8 @@ export default function Employees() {
     setError("");
     try {
       // Busca especialidades do funcionário
-      const res = await fetchWithAuth(
-        `${API_URL}/employees/${employee.id}/specialties`
-      );
-      let specialties = [];
-      if (res.ok) {
-        specialties = await res.json();
-      }
+      const res = await axiosWithAuth(`${API_URL}/employees/${employee.id}/specialties`, { method: "get" });
+      let specialties = res.data || [];
       setEditingEmployee({ ...employee, specialties });
       setEditModalOpen(true);
     } catch (err) {
@@ -139,22 +114,19 @@ export default function Employees() {
     setError("");
     try {
       // Atualiza dados básicos
-      await fetchWithAuth(`${API_URL}/employees/${editingEmployee.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}`, {
+        method: "put",
+        data: {
           name: editingEmployee.name,
           email: editingEmployee.email,
           phone: editingEmployee.phone,
           status: editingEmployee.status,
-        }),
+        },
       });
 
       // Busca especialidades atuais do backend
-      const res = await fetchWithAuth(
-        `${API_URL}/employees/${editingEmployee.id}/specialties`
-      );
-      const currentSpecs = res.ok ? await res.json() : [];
+      const res = await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}/specialties`, { method: "get" });
+      const currentSpecs = res.data || [];
 
       // Calcula especialidades a adicionar, atualizar e remover
       const toAdd = editingEmployee.specialties.filter(
@@ -176,17 +148,13 @@ export default function Employees() {
 
       // Adiciona novas especialidades
       for (const spec of toAdd) {
-        await fetchWithAuth(
-          `${API_URL}/employees/${editingEmployee.id}/specialties`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              service_id: spec.service_id,
-              commission_rate: spec.commission_rate,
-            }),
-          }
-        );
+        await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}/specialties`, {
+          method: "post",
+          data: {
+            service_id: spec.service_id,
+            commission_rate: spec.commission_rate,
+          },
+        });
       }
       // Atualiza taxas
       for (const spec of toUpdate) {
@@ -194,29 +162,22 @@ export default function Employees() {
           (cs) => cs.service_id === spec.service_id
         )?.id;
         if (specId) {
-          await fetchWithAuth(
-            `${API_URL}/employees/${editingEmployee.id}/specialties/${specId}`,
-            {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ commission_rate: spec.commission_rate }),
-            }
-          );
+          await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}/specialties/${specId}`, {
+            method: "put",
+            data: { commission_rate: spec.commission_rate },
+          });
         }
       }
       // Remove especialidades
       for (const spec of toRemove) {
-        await fetchWithAuth(
-          `${API_URL}/employees/${editingEmployee.id}/specialties/${spec.id}`,
-          {
-            method: "DELETE",
-          }
-        );
+        await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}/specialties/${spec.id}`, {
+          method: "delete",
+        });
       }
 
       // Atualiza lista
-      const reload = await fetchWithAuth(`${API_URL}/employees`);
-      setEmployees(await reload.json());
+      const reload = await axiosWithAuth(`${API_URL}/employees`, { method: "get" });
+      setEmployees(reload.data);
       setEditModalOpen(false);
       setEditingEmployee(null);
     } catch (err) {
@@ -230,10 +191,8 @@ export default function Employees() {
       setLoading(true);
       setError("");
       try {
-        const res = await fetchWithAuth(`${API_URL}/employees`);
-        if (!res.ok) throw new Error("Erro ao carregar funcionários.");
-        const data = await res.json();
-        setEmployees(data);
+        const res = await axiosWithAuth(`${API_URL}/employees`, { method: "get" });
+        setEmployees(res.data);
       } catch (err) {
         setError("Erro ao carregar funcionários.");
       } finally {
@@ -242,11 +201,8 @@ export default function Employees() {
     }
     async function fetchServices() {
       try {
-        const res = await fetchWithAuth(`${API_URL}/services`);
-        if (res.ok) {
-          const data = await res.json();
-          setServices(data);
-        }
+        const res = await axiosWithAuth(`${API_URL}/services`, { method: "get" });
+        setServices(res.data);
       } catch (err) {}
     }
     fetchEmployees();
@@ -291,32 +247,29 @@ export default function Employees() {
     setError("");
     try {
       // Cria funcionário
-      const res = await fetchWithAuth(`${API_URL}/employees`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const res = await axiosWithAuth(`${API_URL}/employees`, {
+        method: "post",
+        data: {
           name: newEmployee.name,
           email: newEmployee.email,
           phone: newEmployee.phone,
-        }),
+        },
       });
       if (res.status === 409) {
         setError("E-mail já cadastrado");
         return;
       }
-      if (!res.ok) throw new Error("Erro ao criar funcionário");
-      const created = await res.json();
+      const created = res.data;
       // Adiciona especialidades
       for (const spec of newEmployee.specialties) {
-        await fetchWithAuth(`${API_URL}/employees/${created.id}/specialties`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(spec),
+        await axiosWithAuth(`${API_URL}/employees/${created.id}/specialties`, {
+          method: "post",
+          data: spec,
         });
       }
       // Recarrega lista
-      const reload = await fetchWithAuth(`${API_URL}/employees`);
-      setEmployees(await reload.json());
+      const reload = await axiosWithAuth(`${API_URL}/employees`, { method: "get" });
+      setEmployees(reload.data);
       setNewEmployee({ name: "", email: "", phone: "", specialties: [] });
     } catch (err) {
       setError(err.message || "Erro ao criar funcionário");
@@ -328,10 +281,7 @@ export default function Employees() {
     if (!window.confirm("Tem certeza que deseja excluir este funcionário?")) return;
     setError("");
     try {
-      const res = await fetchWithAuth(`${API_URL}/employees/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Erro ao excluir funcionário");
+      await axiosWithAuth(`${API_URL}/employees/${id}`, { method: "delete" });
       // Atualiza lista
       setEmployees((prev) => prev.filter((emp) => emp.id !== id));
     } catch (err) {

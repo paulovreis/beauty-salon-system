@@ -3,25 +3,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { DollarSign, TrendingUp, Package, AlertTriangle, Scissors } from "lucide-react"
+import api from "../components/api/axios.js"
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000"
 
-// Função global de fetchWithAuth (deve estar disponível no projeto)
-async function fetchWithAuth(url, options = {}) {
+// Função de requisição autenticada usando axios
+async function axiosWithAuth(url, options = {}) {
   let token = localStorage.getItem("token")
   if (!token) throw new Error("Usuário não autenticado")
-  let response = await fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${token}`
+  try {
+    const response = await api({
+      url,
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    return response
+  } catch (error) {
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      throw new Error("Sessão expirada ou acesso negado")
     }
-  })
-  if (response.status === 403 || response.status === 401) {
-    // Não faça reload automático aqui! Apenas lance erro para o App controlar o fluxo.
-    throw new Error("Sessão expirada ou acesso negado")
+    throw error
   }
-  return response
 }
 
 export default function Dashboard() {
@@ -39,17 +44,17 @@ export default function Dashboard() {
       setError("")
       try {
         const [statsRes, recentRes, topRes, revenueRes, expenseRes] = await Promise.all([
-          fetchWithAuth(`${API_URL}/dashboard/stats`),
-          fetchWithAuth(`${API_URL}/dashboard/recent-appointments`),
-          fetchWithAuth(`${API_URL}/dashboard/top-employees`),
-          fetchWithAuth(`${API_URL}/dashboard/revenue-summary`),
-          fetchWithAuth(`${API_URL}/dashboard/expense-breakdown`)
+          axiosWithAuth(`${API_URL}/dashboard/stats`, { method: "get" }),
+          axiosWithAuth(`${API_URL}/dashboard/recent-appointments`, { method: "get" }),
+          axiosWithAuth(`${API_URL}/dashboard/top-employees`, { method: "get" }),
+          axiosWithAuth(`${API_URL}/dashboard/revenue-summary`, { method: "get" }),
+          axiosWithAuth(`${API_URL}/dashboard/expense-breakdown`, { method: "get" })
         ])
-        setStats(await statsRes.json())
-        setRecent(await recentRes.json())
-        setTopEmployees(await topRes.json())
-        setRevenue(await revenueRes.json())
-        setExpenses(await expenseRes.json())
+        setStats(statsRes.data)
+        setRecent(recentRes.data)
+        setTopEmployees(topRes.data)
+        setRevenue(revenueRes.data)
+        setExpenses(expenseRes.data)
       } catch (err) {
         // Se for erro de permissão, mostre mensagem clara
         if (err.message && err.message.toLowerCase().includes("acesso negado")) {
