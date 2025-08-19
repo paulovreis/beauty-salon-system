@@ -226,33 +226,92 @@ export const validateCategoryId = [
 // products validation
 export const validateProductCreate = [
   body("name").isString().notEmpty().withMessage("Nome é obrigatório"),
-  body("category_id").isInt().withMessage("ID da categoria deve ser um inteiro"),
+  body("category_id")
+    .isInt()
+    .withMessage("ID da categoria deve ser um inteiro"),
   body("sku").optional().isString().withMessage("SKU deve ser uma string"),
   body("cost_price").isNumeric().withMessage("Custo deve ser um número"),
-  body("selling_price").isNumeric().withMessage("Preço de venda deve ser um número"),
-  body("current_stock").optional().isInt().withMessage("Estoque atual deve ser um inteiro"),
-  body("min_stock_level").optional().isInt().withMessage("Estoque mínimo deve ser um inteiro"),
-  body("max_stock_level").optional().isInt().withMessage("Estoque máximo deve ser um inteiro"),
-  body("supplier_name").optional().isString().withMessage("Fornecedor deve ser uma string"),
-  body("supplier_contact").optional().isString().withMessage("Contato do fornecedor deve ser uma string"),
-  body("description").optional().isString().withMessage("Descrição deve ser uma string"),
-  body("is_active").optional().isBoolean().withMessage("O campo is_active deve ser booleano"),
+  body("selling_price")
+    .isNumeric()
+    .withMessage("Preço de venda deve ser um número"),
+  body("current_stock")
+    .optional()
+    .isInt()
+    .withMessage("Estoque atual deve ser um inteiro"),
+  body("min_stock_level")
+    .optional()
+    .isInt()
+    .withMessage("Estoque mínimo deve ser um inteiro"),
+  body("max_stock_level")
+    .optional()
+    .isInt()
+    .withMessage("Estoque máximo deve ser um inteiro"),
+  body("supplier_name")
+    .optional()
+    .isString()
+    .withMessage("Fornecedor deve ser uma string"),
+  body("supplier_contact")
+    .optional()
+    .isString()
+    .withMessage("Contato do fornecedor deve ser uma string"),
+  body("description")
+    .optional()
+    .isString()
+    .withMessage("Descrição deve ser uma string"),
+  body("is_active")
+    .optional()
+    .isBoolean()
+    .withMessage("O campo is_active deve ser booleano"),
   validationMiddleware,
 ];
 
 export const validateProductUpdate = [
-  body("name").optional().isString().notEmpty().withMessage("Nome é obrigatório"),
-  body("category_id").optional().isInt().withMessage("ID da categoria deve ser um inteiro"),
+  body("name")
+    .optional()
+    .isString()
+    .notEmpty()
+    .withMessage("Nome é obrigatório"),
+  body("category_id")
+    .optional()
+    .isInt()
+    .withMessage("ID da categoria deve ser um inteiro"),
   body("sku").optional().isString().withMessage("SKU deve ser uma string"),
-  body("cost_price").optional().isNumeric().withMessage("Custo deve ser um número"),
-  body("selling_price").optional().isNumeric().withMessage("Preço de venda deve ser um número"),
-  body("current_stock").optional().isInt().withMessage("Estoque atual deve ser um inteiro"),
-  body("min_stock_level").optional().isInt().withMessage("Estoque mínimo deve ser um inteiro"),
-  body("max_stock_level").optional().isInt().withMessage("Estoque máximo deve ser um inteiro"),
-  body("supplier_name").optional().isString().withMessage("Fornecedor deve ser uma string"),
-  body("supplier_contact").optional().isString().withMessage("Contato do fornecedor deve ser uma string"),
-  body("description").optional().isString().withMessage("Descrição deve ser uma string"),
-  body("is_active").optional().isBoolean().withMessage("O campo is_active deve ser booleano"),
+  body("cost_price")
+    .optional()
+    .isNumeric()
+    .withMessage("Custo deve ser um número"),
+  body("selling_price")
+    .optional()
+    .isNumeric()
+    .withMessage("Preço de venda deve ser um número"),
+  body("current_stock")
+    .optional()
+    .isInt()
+    .withMessage("Estoque atual deve ser um inteiro"),
+  body("min_stock_level")
+    .optional()
+    .isInt()
+    .withMessage("Estoque mínimo deve ser um inteiro"),
+  body("max_stock_level")
+    .optional()
+    .isInt()
+    .withMessage("Estoque máximo deve ser um inteiro"),
+  body("supplier_name")
+    .optional()
+    .isString()
+    .withMessage("Fornecedor deve ser uma string"),
+  body("supplier_contact")
+    .optional()
+    .isString()
+    .withMessage("Contato do fornecedor deve ser uma string"),
+  body("description")
+    .optional()
+    .isString()
+    .withMessage("Descrição deve ser uma string"),
+  body("is_active")
+    .optional()
+    .isBoolean()
+    .withMessage("O campo is_active deve ser booleano"),
   param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
   validationMiddleware,
 ];
@@ -293,8 +352,62 @@ export const validateRestockProduct = [
 ];
 
 export const validateProductMovements = [
-    param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
-    validationMiddleware,
-]
+  param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
+  validationMiddleware,
+];
+
+// INVENTORY VALIDATIONS
+export const validateInventoryList = [validationMiddleware];
+
+export const validateInventoryLowStock = [validationMiddleware];
+
+export const validateInventoryListMovements = [validationMiddleware];
+
+export const validateInventoryCreateMovement = [
+  body("product_id").isInt().withMessage("ID do produto deve ser um inteiro"),
+  body("movement_type")
+    .isString()
+    .notEmpty()
+    .withMessage("Tipo de movimentação obrigatório"),
+  body("quantity").isInt().withMessage("Quantidade deve ser um inteiro"),
+  body("unit_cost")
+    .optional()
+    .isNumeric()
+    .withMessage("Custo unitário deve ser um número"),
+  body("reference_type")
+    .optional()
+    .isString()
+    .withMessage("Tipo de referência deve ser uma string"),
+  body("notes").optional().isString().withMessage("Notas devem ser uma string"),
+  validationMiddleware,
+];
+
+export const validateInventoryPromotionsSuggestions = [validationMiddleware];
+
+export const validateInventoryProductHistory = [
+  param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
+  validationMiddleware,
+];
+
+export const validateInventoryBulkUpdate = [
+  body("updates")
+    .isArray({ min: 1 })
+    .withMessage("Atualizações devem ser um array"),
+  body("updates.*.product_id")
+    .isInt()
+    .withMessage("ID do produto deve ser um inteiro"),
+  body("updates.*.quantity")
+    .isInt()
+    .withMessage("Quantidade deve ser um inteiro"),
+  body("updates.*.unit_cost")
+    .optional()
+    .isNumeric()
+    .withMessage("Custo unitário deve ser um número"),
+  body("updates.*.notes")
+    .optional()
+    .isString()
+    .withMessage("Notas devem ser uma string"),
+  validationMiddleware,
+];
 
 export default validationMiddleware;

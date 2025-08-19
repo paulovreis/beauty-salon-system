@@ -63,11 +63,19 @@ export default function ServicesProducts() {
   });
   // Estado para edição de serviço
   const [editingService, setEditingService] = useState(null);
-  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showEditServiceDialog, setShowEditServiceDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: "", description: "" });
   // Estado para aba ativa (deve vir antes de qualquer uso)
   const [activeTab, setActiveTab] = useState("services");
+
+  // Estados para deletar
+  const [showDeleteServiceDialog, setShowDeleteServiceDialog] = useState(false);
+  const [serviceToDelete, setServiceToDelete] = useState(null);
+  const [showDeleteProductDialog, setShowDeleteProductDialog] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [showEditProductDialog, setShowEditProductDialog] = useState(false);
 
   // Estado para categorias de produtos
   const [productCategories, setProductCategories] = useState([]);
@@ -237,7 +245,7 @@ export default function ServicesProducts() {
       ...service,
       category_id: categoryId ? String(categoryId) : "",
     });
-    setShowEditDialog(true);
+    setShowEditServiceDialog(true);
   }
 
   // Salvar edição
@@ -274,7 +282,7 @@ export default function ServicesProducts() {
               : true,
         },
       });
-      setShowEditDialog(false);
+      setShowEditServiceDialog(false);
       setEditingService(null);
       fetchServices();
     } catch (e) {
@@ -365,6 +373,159 @@ export default function ServicesProducts() {
         fetchProductCategories();
       } catch (e) {
         alert(e.response?.data?.message || e.message);
+      }
+    }
+  }
+
+  // Service edit and delete handlers
+  function handleEditServiceClick(service) {
+    console.log('Service data:', service);
+    console.log('Categories available:', categories);
+    
+    // Se o serviço tem category_name mas não category_id, vamos buscar o ID pela categoria
+    let categoryId = service.category_id;
+    if (!categoryId && service.category_name) {
+      const foundCategory = categories.find(cat => cat.name === service.category_name);
+      if (foundCategory) {
+        categoryId = foundCategory.id;
+      }
+    }
+    
+    const editData = {
+      id: service.id,
+      name: service.name || '',
+      description: service.description || '',
+      price: service.recommended_price || service.base_cost || '',
+      duration: service.duration_minutes || '',
+      category_id: categoryId || ''
+    };
+    
+    console.log('Edit data being set:', editData);
+    setEditingService(editData);
+    setShowEditServiceDialog(true);
+  }
+
+  async function handleSaveEditService() {
+    if (!editingService.name || !editingService.category_id || !editingService.price || !editingService.duration) return;
+    
+    try {
+      setLoading(true);
+      await axiosWithAuth(`/services/${editingService.id}`, {
+        method: "put",
+        data: {
+          name: editingService.name,
+          description: editingService.description || null,
+          base_cost: parseFloat(editingService.price) || 0,
+          recommended_price: parseFloat(editingService.price) || 0,
+          duration_minutes: parseInt(editingService.duration) || 0,
+          profit_margin: 20, // valor padrão
+          category_id: parseInt(editingService.category_id),
+          is_active: true
+        }
+      });
+      setShowEditServiceDialog(false);
+      setEditingService({});
+      fetchServices();
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteService(serviceId) {
+    if (window.confirm("Tem certeza que deseja excluir este serviço?")) {
+      try {
+        setLoading(true);
+        await axiosWithAuth(`/services/${serviceId}`, {
+          method: "delete"
+        });
+        fetchServices();
+      } catch (e) {
+        alert(e.response?.data?.message || e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+  }
+
+  // Product edit and delete handlers
+  function handleEditProductClick(product) {
+    console.log('Product data:', product);
+    console.log('Product categories available:', productCategories);
+    
+    // Se o produto tem category_name mas não category_id, vamos buscar o ID pela categoria
+    let categoryId = product.category_id;
+    if (!categoryId && product.category_name) {
+      const foundCategory = productCategories.find(cat => cat.name === product.category_name);
+      if (foundCategory) {
+        categoryId = foundCategory.id;
+      }
+    }
+    
+    const editData = {
+      id: product.id,
+      name: product.name || '',
+      sku: product.sku || '',
+      description: product.description || '',
+      price: product.price || product.selling_price || '',
+      quantity_in_stock: product.quantity_in_stock || product.current_stock || '',
+      category_id: categoryId || ''
+    };
+    
+    console.log('Product edit data being set:', editData);
+    setEditingProduct(editData);
+    setShowEditProductDialog(true);
+  }
+
+  async function handleSaveEditProduct() {
+    if (!editingProduct.name || !editingProduct.category_id || !editingProduct.price) return;
+    
+    try {
+      setLoading(true);
+      
+      const payload = {
+        name: editingProduct.name,
+        price: parseFloat(editingProduct.price),
+        selling_price: parseFloat(editingProduct.price),
+        quantity_in_stock: parseInt(editingProduct.quantity_in_stock) || 0,
+        current_stock: parseInt(editingProduct.quantity_in_stock) || 0,
+        category_id: parseInt(editingProduct.category_id)
+      };
+
+      if (editingProduct.description && editingProduct.description.trim()) {
+        payload.description = editingProduct.description;
+      }
+      if (editingProduct.sku && editingProduct.sku.trim()) {
+        payload.sku = editingProduct.sku;
+      }
+
+      await axiosWithAuth(`/products/${editingProduct.id}`, {
+        method: "put",
+        data: payload
+      });
+      setShowEditProductDialog(false);
+      setEditingProduct({});
+      fetchProducts();
+    } catch (e) {
+      alert(e.response?.data?.message || e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteProduct(productId) {
+    if (window.confirm("Tem certeza que deseja excluir este produto?")) {
+      try {
+        setLoading(true);
+        await axiosWithAuth(`/products/${productId}`, {
+          method: "delete"
+        });
+        fetchProducts();
+      } catch (e) {
+        alert(e.response?.data?.message || e.message);
+      } finally {
+        setLoading(false);
       }
     }
   }
@@ -601,113 +762,21 @@ export default function ServicesProducts() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleEditService(service)}
+                      onClick={() => handleEditServiceClick(service)}
                     >
                       <Edit className="h-3 w-3" />
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleDeleteService(service.id)}
+                    >
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {/* Modal de edição de serviço */}
-            {showEditDialog && editingService && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
-                  <h3 className="text-lg font-semibold mb-2">Editar Serviço</h3>
-                  <div className="space-y-2">
-                    <Label>Nome</Label>
-                    <Input
-                      value={editingService.name}
-                      onChange={(e) =>
-                        setEditingService({
-                          ...editingService,
-                          name: e.target.value,
-                        })
-                      }
-                    />
-                    <Label>Categoria</Label>
-                    <Select
-                      value={editingService.category_id ?? ""}
-                      onValueChange={(value) =>
-                        setEditingService({
-                          ...editingService,
-                          category_id: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Label>Custo Base (R$)</Label>
-                    <Input
-                      type="number"
-                      value={editingService.base_cost}
-                      onChange={(e) =>
-                        setEditingService({
-                          ...editingService,
-                          base_cost: e.target.value,
-                        })
-                      }
-                    />
-                    <Label>Margem de Lucro (%)</Label>
-                    <Input
-                      type="number"
-                      value={editingService.profit_margin}
-                      onChange={(e) =>
-                        setEditingService({
-                          ...editingService,
-                          profit_margin: e.target.value,
-                        })
-                      }
-                    />
-                    <Label>Duração (minutos)</Label>
-                    <Input
-                      type="number"
-                      value={editingService.duration_minutes}
-                      onChange={(e) =>
-                        setEditingService({
-                          ...editingService,
-                          duration_minutes: e.target.value,
-                        })
-                      }
-                    />
-                    <Label>Descrição</Label>
-                    <Textarea
-                      value={editingService.description}
-                      onChange={(e) =>
-                        setEditingService({
-                          ...editingService,
-                          description: e.target.value,
-                        })
-                      }
-                    />
-                    <div className="flex gap-2 mt-4 justify-end">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowEditDialog(false);
-                          setEditingService(null);
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button onClick={handleSaveEditService}>Salvar</Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </TabsContent>
 
@@ -963,10 +1032,18 @@ export default function ServicesProducts() {
                     </div>
                   </div>
                   <div className="flex gap-2 mt-4">
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleEditProductClick(product)}
+                    >
                       <Edit className="h-3 w-3" />
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleDeleteProduct(product.id)}
+                    >
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
@@ -976,6 +1053,184 @@ export default function ServicesProducts() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog de Edição de Serviço */}
+      <Dialog open={showEditServiceDialog} onOpenChange={setShowEditServiceDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Serviço</DialogTitle>
+            <DialogDescription>Edite as informações do serviço</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="editServiceName">Nome do Serviço</Label>
+              <Input
+                id="editServiceName"
+                value={editingService?.name || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, name: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editServiceCategory">Categoria</Label>
+              <Select
+                value={editingService?.category_id ? editingService.category_id.toString() : ""}
+                onValueChange={(value) =>
+                  setEditingService({ ...editingService, category_id: parseInt(value) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="editServicePrice">Preço (R$)</Label>
+              <Input
+                id="editServicePrice"
+                type="number"
+                step="0.01"
+                value={editingService?.price || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, price: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editServiceDuration">Duração (minutos)</Label>
+              <Input
+                id="editServiceDuration"
+                type="number"
+                value={editingService?.duration || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, duration: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editServiceDescription">Descrição</Label>
+              <Textarea
+                id="editServiceDescription"
+                value={editingService?.description || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, description: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditServiceDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEditService}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Edição de Produto */}
+      <Dialog open={showEditProductDialog} onOpenChange={setShowEditProductDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Produto</DialogTitle>
+            <DialogDescription>Edite as informações do produto</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="editProductName">Nome do Produto</Label>
+              <Input
+                id="editProductName"
+                value={editingProduct?.name || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, name: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editProductSku">SKU</Label>
+              <Input
+                id="editProductSku"
+                value={editingProduct?.sku || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, sku: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editProductCategory">Categoria</Label>
+              <Select
+                value={editingProduct?.category_id ? editingProduct.category_id.toString() : ""}
+                onValueChange={(value) =>
+                  setEditingProduct({ ...editingProduct, category_id: parseInt(value) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {productCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="editProductPrice">Preço (R$)</Label>
+              <Input
+                id="editProductPrice"
+                type="number"
+                step="0.01"
+                value={editingProduct?.price || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, price: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editProductStock">Quantidade em Estoque</Label>
+              <Input
+                id="editProductStock"
+                type="number"
+                value={editingProduct?.quantity_in_stock || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, quantity_in_stock: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editProductDescription">Descrição</Label>
+              <Textarea
+                id="editProductDescription"
+                value={editingProduct?.description || ""}
+                onChange={(e) =>
+                  setEditingProduct({ ...editingProduct, description: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditProductDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEditProduct}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

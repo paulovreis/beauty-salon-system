@@ -8,6 +8,7 @@ import userRoutes from './routes/userRoutes.js';
 import employeesRoutes from './routes/employeesRoutes.js';
 import serviceRoutes from './routes/serviceRoutes.js';
 import productRoutes from './routes/productRoutes.js';
+import inventoryRoutes from './routes/inventoryRoutes.js';
 
 dotenv.config();
 
@@ -46,9 +47,11 @@ app.use('/services', (req, res, next) => {
 }, serviceRoutes);
 
 app.use('/products', (req, res, next) => {
-  req.pool = pool; // Disponibiliza o pool para os controllers via req.pool
+  req.pool = pool;
   next();
-}, productRoutes); // Aqui você pode adicionar as rotas de produtos se necessário
+}, productRoutes);
+
+app.use('/inventory', inventoryRoutes);
 
 const PORT = process.env.PORT || 5000;
 

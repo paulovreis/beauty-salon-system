@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -15,85 +15,77 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Alert, AlertDescription } from "./ui/alert"
 import { Progress } from "./ui/progress"
-import { Plus, Package, AlertTriangle, TrendingDown, Calendar, Edit } from "lucide-react"
+import { Plus, Package, AlertTriangle, TrendingDown, Calendar, Edit, Trash2 } from "lucide-react"
+import { axiosWithAuth } from "./api/axiosWithAuth";
 
 export default function Inventory() {
-  const [inventory, setInventory] = useState([
-    {
-      id: 1,
-      name: "Tintura de Cabelo - Loiro",
-      category: "Produtos para Cabelo",
-      currentStock: 5,
-      minStock: 10,
-      maxStock: 50,
-      cost: 25,
-      sellingPrice: 45,
-      supplier: "Beauty Supply Co.",
-      lastRestocked: "2024-01-15",
-      lastSold: "2024-01-28",
-      daysSinceLastSale: 3,
-      monthlyUsage: 12,
-      status: "baixo_estoque",
-    },
-    {
-      id: 2,
-      name: "Esmalte - Vermelho",
-      category: "Produtos para Unhas",
-      currentStock: 25,
-      minStock: 15,
-      maxStock: 40,
-      cost: 8,
-      sellingPrice: 18,
-      supplier: "Nail Pro Ltd.",
-      lastRestocked: "2024-01-20",
-      lastSold: "2024-01-30",
-      daysSinceLastSale: 1,
-      monthlyUsage: 8,
-      status: "em_estoque",
-    },
-    {
-      id: 3,
-      name: "Tratamento de Queratina",
-      category: "Produtos para Cabelo",
-      currentStock: 3,
-      minStock: 5,
-      maxStock: 20,
-      cost: 45,
-      sellingPrice: 85,
-      supplier: "Professional Hair Co.",
-      lastRestocked: "2024-01-10",
-      lastSold: "2024-01-15",
-      daysSinceLastSale: 16,
-      monthlyUsage: 4,
-      status: "pouca_saida",
-    },
-    {
-      id: 4,
-      name: "Shampoo - Profissional",
-      category: "Produtos para Cabelo",
-      currentStock: 0,
-      minStock: 8,
-      maxStock: 30,
-      cost: 15,
-      sellingPrice: 35,
-      supplier: "Hair Care Plus",
-      lastRestocked: "2024-01-05",
-      lastSold: "2024-01-29",
-      daysSinceLastSale: 2,
-      monthlyUsage: 15,
-      status: "fora_de_estoque",
-    },
-  ])
+  const [inventory, setInventory] = useState([])
+  const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editingItem, setEditingItem] = useState(null)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [itemToDelete, setItemToDelete] = useState(null)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        // Buscar produtos via productController
+        const productsRes = await axiosWithAuth("/products");
+        const categoriesRes = await axiosWithAuth("/products/categories");
+        
+        setCategories(categoriesRes.data);
+        
+        // Mapeia os produtos do productController para o formato do inventory
+        const mapped = productsRes.data.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category_name || "",
+          currentStock: item.current_stock || 0,
+          minStock: item.min_stock_level || 0,
+          maxStock: item.max_stock_level || 0,
+          cost: item.cost_price || 0,
+          sellingPrice: item.selling_price || 0,
+          supplier: item.supplier_name || "",
+          lastRestocked: item.last_restocked,
+          lastSold: item.last_sold,
+          daysSinceLastSale: item.days_since_last_sale || 0,
+          monthlyUsage: item.monthly_usage || 0,
+          status: getStatus(item),
+        }));
+        setInventory(mapped);
+      } catch (err) {
+        setError("Erro ao buscar dados: " + (err.message || ""));
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+    // eslint-disable-next-line
+  }, []);
+
+  // Função para determinar status do produto
+  function getStatus(item) {
+    if (item.current_stock === 0) return "out_of_stock";
+    if (item.current_stock <= item.min_stock_level) return "low_stock";
+    if (item.days_since_last_sale > 14) return "slow_moving";
+    return "in_stock";
+  }
 
   const [newItem, setNewItem] = useState({
     name: "",
-    category: "",
+    category_id: "",
     currentStock: "",
     minStock: "",
     maxStock: "",
     cost: "",
     sellingPrice: "",
     supplier: "",
+    sku: "",
+    description: "",
   })
 
   const getStatusColor = (status) => {
@@ -137,49 +129,230 @@ export default function Inventory() {
     return null
   }
 
-  const handleAddItem = () => {
-    if (newItem.name && newItem.currentStock && newItem.minStock) {
-      const currentStock = Number.parseInt(newItem.currentStock)
-      const minStock = Number.parseInt(newItem.minStock)
+  const handleAddItem = async () => {
+    // Validação mais específica
+    if (!newItem.name.trim()) {
+      setError("Nome do produto é obrigatório");
+      return;
+    }
+    
+    if (!newItem.category_id) {
+      setError("Categoria é obrigatória");
+      return;
+    }
+    
+    if (!newItem.cost || Number(newItem.cost) <= 0) {
+      setError("Custo deve ser um valor positivo");
+      return;
+    }
+    
+    if (!newItem.sellingPrice || Number(newItem.sellingPrice) <= 0) {
+      setError("Preço de venda deve ser um valor positivo");
+      return;
+    }
 
-      let status = "in_stock"
-      if (currentStock === 0) status = "out_of_stock"
-      else if (currentStock <= minStock) status = "low_stock"
+    try {
+      // Usar os mesmos campos do productController
+      const payload = {
+        name: newItem.name.trim(),
+        category_id: Number(newItem.category_id),
+        current_stock: Number(newItem.currentStock) || 0,
+        min_stock_level: Number(newItem.minStock) || 0,
+        max_stock_level: Number(newItem.maxStock) || 0,
+        cost_price: Number(newItem.cost),
+        selling_price: Number(newItem.sellingPrice),
+      };
 
-      const item = {
-        id: inventory.length + 1,
-        ...newItem,
-        currentStock,
-        minStock: Number.parseInt(newItem.minStock),
-        maxStock: Number.parseInt(newItem.maxStock),
-        cost: Number.parseFloat(newItem.cost),
-        sellingPrice: Number.parseFloat(newItem.sellingPrice),
-        lastRestocked: new Date().toISOString().split("T")[0],
-        lastSold: "",
-        daysSinceLastSale: 0,
-        monthlyUsage: 0,
-        status,
+      // Só adicionar campos opcionais se não estiverem vazios
+      if (newItem.supplier && newItem.supplier.trim()) {
+        payload.supplier_name = newItem.supplier.trim();
       }
-
-      setInventory([...inventory, item])
+      
+      if (newItem.sku && newItem.sku.trim()) {
+        payload.sku = newItem.sku.trim();
+      }
+      
+      if (newItem.description && newItem.description.trim()) {
+        payload.description = newItem.description.trim();
+      }
+      
+      console.log("Payload enviado:", payload);
+      
+      const res = await axiosWithAuth("/products", {
+        method: "post",
+        data: payload,
+      });
+        
+      // Atualiza inventário local com o novo produto salvo
+      const item = res.data;
+      const categoryName = categories.find(c => c.id === item.category_id)?.name || "";
+      
+      setInventory((prev) => [
+        ...prev,
+        {
+          id: item.id,
+          name: item.name,
+          category: categoryName,
+          currentStock: item.current_stock || 0,
+          minStock: item.min_stock_level || 0,
+          maxStock: item.max_stock_level || 0,
+          cost: item.cost_price || 0,
+          sellingPrice: item.selling_price || 0,
+          supplier: item.supplier_name || "",
+          lastRestocked: item.last_restocked,
+          lastSold: item.last_sold,
+          daysSinceLastSale: item.days_since_last_sale || 0,
+          monthlyUsage: item.monthly_usage || 0,
+          status: getStatus(item),
+        },
+      ]);
+      
+      // Limpar formulário
       setNewItem({
         name: "",
-        category: "",
+        category_id: "",
         currentStock: "",
         minStock: "",
         maxStock: "",
         cost: "",
         sellingPrice: "",
         supplier: "",
-      })
+        sku: "",
+        description: "",
+      });
+    } catch (err) {
+      console.error("Erro detalhado:", err);
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido";
+      setError("Erro ao adicionar produto: " + errorMsg);
     }
   }
 
-  const lowStockItems = inventory.filter((item) => item.status === "baixo_estoque" || item.status === "fora_de_estoque")
+  const handleEditItem = (item) => {
+    setEditingItem({
+      id: item.id,
+      name: item.name,
+      category_id: categories.find(c => c.name === item.category)?.id || "",
+      currentStock: item.currentStock.toString(),
+      minStock: item.minStock.toString(),
+      maxStock: item.maxStock.toString(),
+      cost: item.cost.toString(),
+      sellingPrice: item.sellingPrice.toString(),
+      supplier: item.supplier || "",
+      sku: item.sku || "",
+      description: item.description || "",
+    })
+    setShowEditDialog(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingItem.name || !editingItem.category_id || !editingItem.cost || !editingItem.sellingPrice) {
+      setError("Preencha todos os campos obrigatórios")
+      return
+    }
+
+    try {
+      const payload = {
+        name: editingItem.name.trim(),
+        category_id: Number(editingItem.category_id),
+        current_stock: Number(editingItem.currentStock) || 0,
+        min_stock_level: Number(editingItem.minStock) || 0,
+        max_stock_level: Number(editingItem.maxStock) || 0,
+        cost_price: Number(editingItem.cost),
+        selling_price: Number(editingItem.sellingPrice),
+      }
+
+      if (editingItem.supplier && editingItem.supplier.trim()) {
+        payload.supplier_name = editingItem.supplier.trim()
+      }
+      
+      if (editingItem.sku && editingItem.sku.trim()) {
+        payload.sku = editingItem.sku.trim()
+      }
+      
+      if (editingItem.description && editingItem.description.trim()) {
+        payload.description = editingItem.description.trim()
+      }
+
+      const res = await axiosWithAuth(`/products/${editingItem.id}`, {
+        method: "put",
+        data: payload,
+      })
+
+      // Atualizar o item no inventário local
+      const updatedItem = res.data
+      const categoryName = categories.find(c => c.id === updatedItem.category_id)?.name || ""
+      
+      setInventory(prev => prev.map(item => 
+        item.id === editingItem.id 
+          ? {
+              id: updatedItem.id,
+              name: updatedItem.name,
+              category: categoryName,
+              currentStock: updatedItem.current_stock || 0,
+              minStock: updatedItem.min_stock_level || 0,
+              maxStock: updatedItem.max_stock_level || 0,
+              cost: updatedItem.cost_price || 0,
+              sellingPrice: updatedItem.selling_price || 0,
+              supplier: updatedItem.supplier_name || "",
+              lastRestocked: updatedItem.last_restocked,
+              lastSold: updatedItem.last_sold,
+              daysSinceLastSale: updatedItem.days_since_last_sale || 0,
+              monthlyUsage: updatedItem.monthly_usage || 0,
+              status: getStatus(updatedItem),
+            }
+          : item
+      ))
+
+      setShowEditDialog(false)
+      setEditingItem(null)
+    } catch (err) {
+      console.error("Erro ao editar produto:", err)
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
+      setError("Erro ao editar produto: " + errorMsg)
+    }
+  }
+
+  const handleDeleteItem = (item) => {
+    setItemToDelete(item)
+    setShowDeleteDialog(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return
+
+    try {
+      await axiosWithAuth(`/products/${itemToDelete.id}`, {
+        method: "delete",
+      })
+
+      setInventory(prev => prev.filter(item => item.id !== itemToDelete.id))
+      setShowDeleteDialog(false)
+      setItemToDelete(null)
+    } catch (err) {
+      console.error("Erro ao excluir produto:", err)
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
+      setError("Erro ao excluir produto: " + errorMsg)
+    }
+  }
+
+  const lowStockItems = inventory.filter((item) => item.status === "low_stock" || item.status === "out_of_stock")
   const slowMovingItems = inventory.filter((item) => item.daysSinceLastSale > 14)
 
   return (
     <div className="space-y-6">
+      {loading && (
+        <Alert>
+          <AlertDescription>Carregando dados do estoque...</AlertDescription>
+        </Alert>
+      )}
+      
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold">Controle de Estoque</h2>
@@ -209,15 +382,16 @@ export default function Inventory() {
               </div>
               <div>
                 <Label htmlFor="itemCategory">Categoria</Label>
-                <Select value={newItem.category} onValueChange={(value) => setNewItem({ ...newItem, category: value })}>
+                <Select value={newItem.category_id} onValueChange={(value) => setNewItem({ ...newItem, category_id: value })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Hair Products">Produtos para Cabelo</SelectItem>
-                    <SelectItem value="Nail Products">Produtos para Unhas</SelectItem>
-                    <SelectItem value="Skin Care">Cuidados com a Pele</SelectItem>
-                    <SelectItem value="Tools">Ferramentas</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id.toString()}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -259,6 +433,7 @@ export default function Inventory() {
                   <Input
                     id="cost"
                     type="number"
+                    step="0.01"
                     value={newItem.cost}
                     onChange={(e) => setNewItem({ ...newItem, cost: e.target.value })}
                     placeholder="25.00"
@@ -269,19 +444,40 @@ export default function Inventory() {
                   <Input
                     id="sellingPrice"
                     type="number"
+                    step="0.01"
                     value={newItem.sellingPrice}
                     onChange={(e) => setNewItem({ ...newItem, sellingPrice: e.target.value })}
                     placeholder="45.00"
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="sku">SKU (Opcional)</Label>
+                  <Input
+                    id="sku"
+                    value={newItem.sku}
+                    onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })}
+                    placeholder="SKU123"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="supplier">Fornecedor</Label>
+                  <Input
+                    id="supplier"
+                    value={newItem.supplier}
+                    onChange={(e) => setNewItem({ ...newItem, supplier: e.target.value })}
+                    placeholder="Beauty Supply Co."
+                  />
+                </div>
+              </div>
               <div>
-                <Label htmlFor="supplier">Fornecedor</Label>
+                <Label htmlFor="description">Descrição (Opcional)</Label>
                 <Input
-                  id="supplier"
-                  value={newItem.supplier}
-                  onChange={(e) => setNewItem({ ...newItem, supplier: e.target.value })}
-                  placeholder="Beauty Supply Co."
+                  id="description"
+                  value={newItem.description}
+                  onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                  placeholder="Descrição do produto"
                 />
               </div>
               <Button onClick={handleAddItem} className="w-full">
@@ -347,7 +543,14 @@ export default function Inventory() {
           <CardContent>
             <div className="text-2xl font-bold">
               R$
-              {inventory.reduce((sum, item) => sum + item.currentStock * item.cost, 0).toLocaleString("pt-BR")}
+              {inventory
+                .reduce((sum, item) => {
+                  const cost = Number(item.cost);
+                  const qty = Number(item.currentStock);
+                  if (isNaN(cost) || isNaN(qty)) return sum;
+                  return sum + qty * cost;
+                }, 0)
+                .toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">Valor total de custo</p>
           </CardContent>
@@ -420,12 +623,12 @@ export default function Inventory() {
                 )}
 
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1 bg-transparent">
+                  <Button variant="outline" size="sm" className="flex-1 bg-transparent" onClick={() => handleEditItem(item)}>
                     <Edit className="h-3 w-3 mr-1" />
                     Editar
                   </Button>
-                  <Button variant="outline" size="sm">
-                    <Package className="h-3 w-3" />
+                  <Button variant="outline" size="sm" className="bg-red-500 hover:bg-red-600 transition ease-in-out" onClick={() => handleDeleteItem(item)}>
+                    <Trash2 className="h-3 w-3 text-white" />
                   </Button>
                 </div>
               </CardContent>
@@ -466,6 +669,148 @@ export default function Inventory() {
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog de Edição */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Produto</DialogTitle>
+            <DialogDescription>Edite as informações do produto</DialogDescription>
+          </DialogHeader>
+          {editingItem && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="editName">Nome do Produto</Label>
+                <Input
+                  id="editName"
+                  value={editingItem.name}
+                  onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="editCategory">Categoria</Label>
+                <Select value={editingItem.category_id} onValueChange={(value) => setEditingItem({ ...editingItem, category_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id.toString()}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label htmlFor="editCurrentStock">Atual</Label>
+                  <Input
+                    id="editCurrentStock"
+                    type="number"
+                    value={editingItem.currentStock}
+                    onChange={(e) => setEditingItem({ ...editingItem, currentStock: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editMinStock">Mín</Label>
+                  <Input
+                    id="editMinStock"
+                    type="number"
+                    value={editingItem.minStock}
+                    onChange={(e) => setEditingItem({ ...editingItem, minStock: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editMaxStock">Máx</Label>
+                  <Input
+                    id="editMaxStock"
+                    type="number"
+                    value={editingItem.maxStock}
+                    onChange={(e) => setEditingItem({ ...editingItem, maxStock: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="editCost">Custo (R$)</Label>
+                  <Input
+                    id="editCost"
+                    type="number"
+                    step="0.01"
+                    value={editingItem.cost}
+                    onChange={(e) => setEditingItem({ ...editingItem, cost: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editSellingPrice">Preço de Venda (R$)</Label>
+                  <Input
+                    id="editSellingPrice"
+                    type="number"
+                    step="0.01"
+                    value={editingItem.sellingPrice}
+                    onChange={(e) => setEditingItem({ ...editingItem, sellingPrice: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="editSku">SKU (Opcional)</Label>
+                  <Input
+                    id="editSku"
+                    value={editingItem.sku}
+                    onChange={(e) => setEditingItem({ ...editingItem, sku: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editSupplier">Fornecedor</Label>
+                  <Input
+                    id="editSupplier"
+                    value={editingItem.supplier}
+                    onChange={(e) => setEditingItem({ ...editingItem, supplier: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="editDescription">Descrição (Opcional)</Label>
+                <Input
+                  id="editDescription"
+                  value={editingItem.description}
+                  onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveEdit} className="flex-1">
+                  Salvar Alterações
+                </Button>
+                <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir o produto "{itemToDelete?.name}"? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Excluir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
