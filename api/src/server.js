@@ -9,6 +9,7 @@ import employeesRoutes from './routes/employeesRoutes.js';
 import serviceRoutes from './routes/serviceRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
+const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
 
@@ -55,11 +56,27 @@ app.use('/inventory', inventoryRoutes);
 
 const PORT = process.env.PORT || 5000;
 
+async function connectWithRetry() {
+  let attempts = 0;
+  while (attempts < 10) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('Conectado ao banco!');
+      //chama o initDb.js aqui para iniciar as tabelas
+      await createTables();
+      return;
+    } catch (err) {
+      attempts++;
+      console.log(`Tentativa ${attempts}: aguardando banco...`);
+      await new Promise(res => setTimeout(res, 3000));
+    }
+  }
+  throw new Error('Não foi possível conectar ao banco após várias tentativas.');
+}
+
 const startServer = async () => {
   try {
-    // Testa conexão com o banco
-    const result = await pool.query('SELECT NOW()');
-    console.log('Database connected successfully:', result.rows[0]);
+    await connectWithRetry();
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
