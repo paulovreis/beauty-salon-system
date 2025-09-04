@@ -1,4 +1,5 @@
 import pool from "../db/postgre.js";
+import * as bcrypt from 'bcryptjs'
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
@@ -36,17 +37,27 @@ const EmployeeController = {
 
   async create(req, res) {
     const db = getPool(req);
-    const { name, email, phone, hire_date, base_salary } = req.body;
+    const { name, email, phone, hire_date, base_salary, password, role } = req.body;
     try {
       // Checa duplicidade de e-mail
       const emailCheck = await db.query("SELECT id FROM employees WHERE email = $1", [email]);
       if (emailCheck.rows.length > 0) {
         return res.status(409).json({ message: "E-mail já cadastrado" });
       }
+
+      const hashedPassword = bcrypt.hashSync(password, 8);
+
       const { rows } = await db.query(
         "INSERT INTO employees (name, email, phone, hire_date, base_salary, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
         [name, email, phone, hire_date, base_salary, "active"]
       );
+
+      const { userRows } = await db.query(
+        "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING *",
+        [rows[0].id, email, hashedPassword, role]
+      )
+
+
       res.status(201).json(rows[0]);
     } catch (err) {
       console.log("Erro ao criar funcionário:", err);
@@ -79,6 +90,12 @@ const EmployeeController = {
         "DELETE FROM employees WHERE id = $1",
         [id]
       );
+
+      const { userCount } = await db.query(
+        "DELETE FROM users WHERE id = $1",
+        [id]
+      );
+
       if (!rowCount) return res.status(404).json({ message: "Funcionário não encontrado" });
       res.json({ message: "Funcionário removido com sucesso" });
     } catch (err) {

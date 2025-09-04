@@ -22,6 +22,8 @@ export const validateEmployeeCreate = [
     .optional()
     .isNumeric()
     .withMessage("Salário deve ser numérico"),
+  body('password').isString().notEmpty().withMessage("Senha é obrigatória"),
+  body('role').isString().notEmpty().withMessage('Role é obrigatório'),
   validationMiddleware,
 ];
 

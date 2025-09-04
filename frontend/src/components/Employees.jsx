@@ -41,6 +41,8 @@ export default function Employees() {
     name: "",
     email: "",
     phone: "",
+    role: "",
+    password: "",
     specialties: [], // [{ service_id, commission_rate }]
   });
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
@@ -203,7 +205,7 @@ export default function Employees() {
       try {
         const res = await axiosWithAuth(`${API_URL}/services`, { method: "get" });
         setServices(res.data);
-      } catch (err) {}
+      } catch (err) { }
     }
     fetchEmployees();
     fetchServices();
@@ -253,6 +255,8 @@ export default function Employees() {
           name: newEmployee.name,
           email: newEmployee.email,
           phone: newEmployee.phone,
+          role: newEmployee.role,
+          password: newEmployee.password
         },
       });
       if (res.status === 409) {
@@ -276,7 +280,7 @@ export default function Employees() {
     }
   };
 
-    // Deletar funcionário
+  // Deletar funcionário
   const handleDeleteEmployee = async (id) => {
     if (!window.confirm("Tem certeza que deseja excluir este funcionário?")) return;
     setError("");
@@ -348,6 +352,38 @@ export default function Employees() {
                   }
                   placeholder="(11) 99999-1111"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="employeePassword">Senha</Label>
+                  <Input
+                    id="employeePassword"
+                    value={newEmployee.password}
+                    onChange={(e) =>
+                      setNewEmployee({ ...newEmployee, password: e.target.value })
+                    }
+                    type="password"
+                  />
+                </div>
+                <div>
+                  <Select
+                    value={newEmployee.role}
+                    onValueChange={(v) => setNewEmployee({ ...newEmployee, role: v})}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione o cargo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                          <SelectItem key={'employee'} value={'employee'}>
+                            Empregado
+                          </SelectItem>
+                          <SelectItem key={'owner'} value={'owner'}>
+                            Dono
+                          </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -728,10 +764,10 @@ export default function Employees() {
                   <p className="text-sm text-muted-foreground">
                     {employee.monthlyStats?.totalRevenue
                       ? (
-                          (employee.monthlyStats.totalCommission /
-                            employee.monthlyStats.totalRevenue) *
-                          100
-                        ).toFixed(1)
+                        (employee.monthlyStats.totalCommission /
+                          employee.monthlyStats.totalRevenue) *
+                        100
+                      ).toFixed(1)
                       : 0}
                     % em média
                   </p>
