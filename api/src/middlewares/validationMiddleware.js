@@ -96,6 +96,24 @@ export const validadeResetPassword = [
   validationMiddleware,
 ];
 
+export const validateForgotPassword = [
+  body("email").isEmail().withMessage("Invalid email format"),
+  validationMiddleware,
+];
+
+export const validateResetPasswordWithToken = [
+  body("token").isString().notEmpty().withMessage("Token is required"),
+  body("newPassword")
+    .isLength({ min: 6 })
+    .withMessage("New password must be at least 6 characters long"),
+  validationMiddleware,
+];
+
+export const validateResetToken = [
+  param("token").isString().notEmpty().withMessage("Token is required"),
+  validationMiddleware,
+];
+
 export const validateGetServiceById = [
   param("id").isInt().withMessage("ID do serviço deve ser um inteiro"),
   validationMiddleware,

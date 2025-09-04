@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BarChart3, Users, Scissors, Package, Calendar } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import ServicesProducts from "./components/ServicesProducts";
@@ -56,7 +56,7 @@ async function fetchWithAuth(url, options = {}) {
   return response;
 }
 
-function LoginPage({ onLogin, onShowRegister }) {
+function LoginPage({ onLogin, onShowRegister, onShowForgotPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -134,12 +134,253 @@ function LoginPage({ onLogin, onShowRegister }) {
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
+        <div className="mt-4 flex justify-between text-sm">
+          <button
+            type="button"
+            className="text-primary underline"
+            onClick={onShowRegister}
+          >
+            Criar nova conta
+          </button>
+          <button
+            type="button"
+            className="text-primary underline"
+            onClick={onShowForgotPassword}
+          >
+            Esqueceu a senha?
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ForgotPasswordPage({ onBack }) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!email) {
+      setError("Preencha o campo de e-mail.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Erro ao enviar e-mail de reset.");
+        setLoading(false);
+        return;
+      }
+      setSuccess(data.message || "E-mail de reset enviado com sucesso!");
+      setEmail("");
+    } catch (err) {
+      setError("Erro de conexão com o servidor.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 to-purple-50">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm"
+      >
+        <h2 className="text-2xl font-bold mb-6 text-center">
+          Esqueceu a Senha?
+        </h2>
+        <p className="text-gray-600 mb-6 text-center">
+          Digite seu e-mail e enviaremos um link para redefinir sua senha.
+        </p>
+        <div className="mb-4">
+          <label className="block text-gray-700 mb-1" htmlFor="email">
+            E-mail
+          </label>
+          <input
+            id="email"
+            type="email"
+            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-primary"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+        </div>
+        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {success && <div className="text-green-600 text-sm mb-2">{success}</div>}
+        <button
+          type="submit"
+          className="w-full bg-primary text-white py-2 rounded-md font-medium hover:bg-primary/90 transition"
+          disabled={loading}
+        >
+          {loading ? "Enviando..." : "Enviar E-mail"}
+        </button>
         <button
           type="button"
           className="w-full mt-2 text-primary underline text-sm"
-          onClick={onShowRegister}
+          onClick={onBack}
         >
-          Criar nova conta
+          Voltar para login
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ResetPasswordPage({ onBack }) {
+  const [token, setToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [tokenValid, setTokenValid] = useState(false);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    if (tokenFromUrl) {
+      setToken(tokenFromUrl);
+      validateToken(tokenFromUrl);
+    }
+  }, []);
+
+  const validateToken = async (tokenToValidate) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/validate-reset-token/${tokenToValidate}`);
+      const data = await response.json();
+      if (response.ok) {
+        setTokenValid(true);
+        setError("");
+      } else {
+        setTokenValid(false);
+        setError("Token inválido ou expirado. Solicite um novo link de redefinição.");
+      }
+    } catch (err) {
+      setTokenValid(false);
+      setError("Erro ao validar token. Tente novamente.");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!token || !newPassword || !confirmPassword) {
+      setError("Preencha todos os campos.");
+      return;
+    }
+    if (!tokenValid) {
+      setError("Token inválido ou expirado.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("As senhas não coincidem.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Erro ao redefinir senha.");
+        setLoading(false);
+        return;
+      }
+      setSuccess("Senha redefinida com sucesso! Você pode fazer login agora.");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setError("Erro de conexão com o servidor.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 to-purple-50">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm"
+      >
+        <h2 className="text-2xl font-bold mb-6 text-center">
+          Redefinir Senha
+        </h2>
+        {!tokenValid && token && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-yellow-800 text-sm">
+              Validando seu link de redefinição...
+            </p>
+          </div>
+        )}
+        {tokenValid && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-green-800 text-sm">
+              ✓ Link válido! Você pode redefinir sua senha.
+            </p>
+          </div>
+        )}
+        <div className="mb-4">
+          <label className="block text-gray-700 mb-1" htmlFor="newPassword">
+            Nova Senha
+          </label>
+          <input
+            id="newPassword"
+            type="password"
+            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-primary"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={!tokenValid}
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-gray-700 mb-1" htmlFor="confirmPassword">
+            Confirmar Nova Senha
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-primary"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={!tokenValid}
+          />
+        </div>
+        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {success && <div className="text-green-600 text-sm mb-2">{success}</div>}
+        <button
+          type="submit"
+          className="w-full bg-primary text-white py-2 rounded-md font-medium hover:bg-primary/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={loading || !tokenValid}
+        >
+          {loading ? "Redefinindo..." : "Redefinir Senha"}
+        </button>
+        <button
+          type="button"
+          className="w-full mt-2 text-primary underline text-sm"
+          onClick={onBack}
+        >
+          Voltar para login
         </button>
       </form>
     </div>
@@ -240,6 +481,16 @@ function App() {
   );
   const [user, setUser] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      setShowResetPassword(true);
+    }
+  }, []);
 
   const navigation = [
     {
@@ -281,13 +532,13 @@ function App() {
   };
 
   // Exemplo de uso automático do refreshToken ao montar o app
-  React.useEffect(() => {
+  useEffect(() => {
     if (isAuthenticated) {
       refreshToken();
     }
   }, [isAuthenticated]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let interval;
     if (isAuthenticated) {
       // Chama refreshToken a cada 50 minutos (token expira em 1h)
@@ -299,6 +550,23 @@ function App() {
   }, [isAuthenticated]);
 
   if (!isAuthenticated) {
+    if (showResetPassword) {
+      return (
+        <ResetPasswordPage
+          onBack={() => {
+            setShowResetPassword(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }}
+        />
+      );
+    }
+    if (showForgotPassword) {
+      return (
+        <ForgotPasswordPage
+          onBack={() => setShowForgotPassword(false)}
+        />
+      );
+    }
     if (showRegister) {
       return (
         <RegisterPage
@@ -311,6 +579,7 @@ function App() {
       <LoginPage
         onLogin={handleLogin}
         onShowRegister={() => setShowRegister(true)}
+        onShowForgotPassword={() => setShowForgotPassword(true)}
       />
     );
   }
