@@ -9,6 +9,7 @@ import employeesRoutes from './routes/employeesRoutes.js';
 import serviceRoutes from './routes/serviceRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
+import schedulingRoutes from './routes/schedulingRoutes.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -53,6 +54,8 @@ app.use('/products', (req, res, next) => {
 }, productRoutes);
 
 app.use('/inventory', inventoryRoutes);
+
+app.use('/scheduling', schedulingRoutes);
 
 const PORT = process.env.PORT || 5000;
 

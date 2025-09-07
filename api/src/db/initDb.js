@@ -220,6 +220,19 @@ export const createTables = async () => {
         description TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS time_slots (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        date DATE NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        is_available BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+        UNIQUE(employee_id, date, start_time)
+      );
     `);
     console.log('Tabelas criadas com sucesso!');
   } catch (err) {
