@@ -51,6 +51,14 @@ router.get(
 	(req, res) => SchedulingController.getNextFiveSchedulings(req, res)
 );
 
+// paginated upcoming (limit, offset via query)
+router.get(
+  "/upcoming",
+  authenticateJWT,
+  roleMiddleware(["owner","manager","employee"]),
+  (req,res)=> SchedulingController.getUpcomingPaginated(req,res)
+);
+
 // get schedulings by employee
 router.get(
 	"/employee/:employeeId",
@@ -95,3 +103,33 @@ router.get(
 	validateGetAvailableTimeSlots,
 	(req, res) => SchedulingController.getAvailableTimeSlots(req, res)
 );
+
+// status transitions (confirm, complete, cancel)
+router.post(
+	"/:id/confirm",
+	authenticateJWT,
+	roleMiddleware(["owner","manager","employee"]),
+	(req,res)=> SchedulingController.transitionStatus(req,res,'confirmed')
+);
+router.post(
+	"/:id/complete",
+	authenticateJWT,
+	roleMiddleware(["owner","manager","employee"]),
+	(req,res)=> SchedulingController.transitionStatus(req,res,'completed')
+);
+router.post(
+	"/:id/cancel",
+	authenticateJWT,
+	roleMiddleware(["owner","manager","employee"]),
+	(req,res)=> SchedulingController.transitionStatus(req,res,'canceled')
+);
+
+// generate time slots for range
+router.post(
+	"/generate-slots",
+	authenticateJWT,
+	roleMiddleware(["owner","manager"]),
+	(req,res)=> SchedulingController.generateTimeSlots(req,res)
+);
+
+export default router;

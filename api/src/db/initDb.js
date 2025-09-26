@@ -1,10 +1,10 @@
 import pool from './postgre.js';
 
-// Função para criar as tabelas (roda apenas quando chamada manualmente)
+// Criação das tabelas em queries separadas para evitar erros de parsing e facilitar manutenção
 export const createTables = async () => {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
+    const queries = [
+      `CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
@@ -13,9 +13,8 @@ export const createTables = async () => {
         reset_token_expires TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS employees (
+      );`,
+      `CREATE TABLE IF NOT EXISTS employees (
         id SERIAL PRIMARY KEY,
         user_id INTEGER,
         name VARCHAR(255) NOT NULL,
@@ -27,16 +26,14 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS service_categories (
+      );`,
+      `CREATE TABLE IF NOT EXISTS service_categories (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS services (
+      );`,
+      `CREATE TABLE IF NOT EXISTS services (
         id SERIAL PRIMARY KEY,
         category_id INTEGER,
         name VARCHAR(255) NOT NULL,
@@ -49,9 +46,8 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES service_categories(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS employee_specialties (
+      );`,
+      `CREATE TABLE IF NOT EXISTS employee_specialties (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
         service_id INTEGER NOT NULL,
@@ -60,9 +56,8 @@ export const createTables = async () => {
         FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
         FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
         UNIQUE(employee_id, service_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS clients (
+      );`,
+      `CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
@@ -76,9 +71,8 @@ export const createTables = async () => {
         total_spent DECIMAL(10,2) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS appointments (
+      );`,
+      `CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
         client_id INTEGER NOT NULL,
         employee_id INTEGER NOT NULL,
@@ -95,16 +89,14 @@ export const createTables = async () => {
         FOREIGN KEY (client_id) REFERENCES clients(id),
         FOREIGN KEY (employee_id) REFERENCES employees(id),
         FOREIGN KEY (service_id) REFERENCES services(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS product_categories (
+      );`,
+      `CREATE TABLE IF NOT EXISTS product_categories (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS products (
+      );`,
+      `CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
         category_id INTEGER,
         name VARCHAR(255) NOT NULL,
@@ -122,9 +114,8 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES product_categories(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS stock_movements (
+      );`,
+      `CREATE TABLE IF NOT EXISTS stock_movements (
         id SERIAL PRIMARY KEY,
         product_id INTEGER NOT NULL,
         movement_type VARCHAR(20) NOT NULL,
@@ -135,9 +126,8 @@ export const createTables = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (product_id) REFERENCES products(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS sales (
+      );`,
+      `CREATE TABLE IF NOT EXISTS sales (
         id SERIAL PRIMARY KEY,
         client_id INTEGER,
         employee_id INTEGER,
@@ -152,9 +142,8 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (client_id) REFERENCES clients(id),
         FOREIGN KEY (employee_id) REFERENCES employees(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS sale_items (
+      );`,
+      `CREATE TABLE IF NOT EXISTS sale_items (
         id SERIAL PRIMARY KEY,
         sale_id INTEGER NOT NULL,
         product_id INTEGER NOT NULL,
@@ -163,9 +152,8 @@ export const createTables = async () => {
         total_price DECIMAL(10,2) NOT NULL,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
         FOREIGN KEY (product_id) REFERENCES products(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS expenses (
+      );`,
+      `CREATE TABLE IF NOT EXISTS expenses (
         id SERIAL PRIMARY KEY,
         category VARCHAR(30) NOT NULL,
         description VARCHAR(255) NOT NULL,
@@ -175,9 +163,8 @@ export const createTables = async () => {
         receipt_number VARCHAR(100),
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS employee_commissions (
+      );`,
+      `CREATE TABLE IF NOT EXISTS employee_commissions (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
         appointment_id INTEGER,
@@ -194,9 +181,8 @@ export const createTables = async () => {
         FOREIGN KEY (employee_id) REFERENCES employees(id),
         FOREIGN KEY (appointment_id) REFERENCES appointments(id),
         FOREIGN KEY (sale_id) REFERENCES sales(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS promotions (
+      );`,
+      `CREATE TABLE IF NOT EXISTS promotions (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
@@ -211,17 +197,15 @@ export const createTables = async () => {
         usage_limit INTEGER,
         usage_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS settings (
+      );`,
+      `CREATE TABLE IF NOT EXISTS settings (
         id SERIAL PRIMARY KEY,
         setting_key VARCHAR(100) UNIQUE NOT NULL,
         setting_value TEXT,
         description TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS time_slots (
+      );`,
+      `CREATE TABLE IF NOT EXISTS time_slots (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
         date DATE NOT NULL,
@@ -232,15 +216,22 @@ export const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
         UNIQUE(employee_id, date, start_time)
-      );
-    `);
-    console.log('Tabelas criadas com sucesso!');
+      );`
+    ];
+
+    for (const q of queries) {
+      await pool.query(q);
+    }
+
+    // Índices para performance de consultas de agendamentos e slots
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_employee_date_time ON appointments(employee_id, appointment_date, appointment_time);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_date_time ON appointments(appointment_date, appointment_time);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_time_slots_employee_date_time ON time_slots(employee_id, date, start_time);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_status_date ON appointments(status, appointment_date);`);
+
+    console.log('Tabelas e índices criados (se não existiam).');
   } catch (err) {
     console.error('Erro ao criar tabelas:', err);
   }
 };
-
-// Permite rodar o script diretamente via "node src/db/initDb.js"
-if (process.argv[1].endsWith('initDb.js')) {
-  createTables().then(() => process.exit(0));
-}

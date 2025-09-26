@@ -438,7 +438,20 @@ export const validateCreateScheduling = [
 	body("appointment_time")
 		.matches(/^\d{2}:\d{2}(:\d{2})?$/)
 		.withMessage("Hora do agendamento inválida"),
-	body("client_id").isInt().withMessage("ID do cliente deve ser um inteiro"),
+	// Aceita client_id OU (client_name e client_phone)
+	body().custom((value) => {
+		const hasClientId = Number.isInteger(value.client_id);
+		const hasNameAndPhone =
+			typeof value.client_name === "string" && value.client_name.trim() !== "" &&
+			typeof value.client_phone === "string" && value.client_phone.trim() !== "";
+		if (!hasClientId && !hasNameAndPhone) {
+			throw new Error("Informe client_id ou client_name e client_phone");
+		}
+		return true;
+	}),
+	body("client_id").optional().isInt().withMessage("ID do cliente deve ser um inteiro"),
+	body("client_name").optional().isString().notEmpty().withMessage("Nome do cliente é obrigatório quando não houver client_id"),
+	body("client_phone").optional().isString().notEmpty().withMessage("Telefone do cliente é obrigatório quando não houver client_id"),
 	body("employee_id")
 		.isInt()
 		.withMessage("ID do funcionário deve ser um inteiro"),

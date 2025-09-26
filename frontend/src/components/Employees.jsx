@@ -209,6 +209,10 @@ export default function Employees() {
     }
     fetchEmployees();
     fetchServices();
+    // Refetch quando agendamentos mudarem (evento disparado em Scheduling.jsx)
+    const handler = () => fetchEmployees();
+    window.addEventListener('appointments:changed', handler);
+    return () => window.removeEventListener('appointments:changed', handler);
   }, []);
 
   // Adiciona especialidade (usando id do serviço)

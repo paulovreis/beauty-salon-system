@@ -42,9 +42,10 @@ class DashboardController {
     const pool = req.pool;
     try {
       const { rows } = await pool.query(`
+        -- Conta apenas serviços realmente concluídos para ranking
         SELECT e.id, e.name, COUNT(a.id) as total_appointments
         FROM employees e
-        LEFT JOIN appointments a ON a.employee_id = e.id AND a.status IN ('completed', 'confirmed')
+        LEFT JOIN appointments a ON a.employee_id = e.id AND a.status = 'completed'
         GROUP BY e.id, e.name
         ORDER BY total_appointments DESC
         LIMIT 5
@@ -62,7 +63,7 @@ class DashboardController {
         SELECT 
           COALESCE(SUM(price),0) as total_appointments,
           (SELECT COALESCE(SUM(total_amount),0) FROM sales) as total_sales
-        FROM appointments WHERE status IN ('completed', 'confirmed')
+        FROM appointments WHERE status = 'completed'
       `);
       res.json({
         totalAppointmentsRevenue: Number(rows[0].total_appointments),

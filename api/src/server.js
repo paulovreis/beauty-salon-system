@@ -10,6 +10,7 @@ import serviceRoutes from './routes/serviceRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import schedulingRoutes from './routes/schedulingRoutes.js';
+import clientRoutes from './routes/clientRoutes.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -55,7 +56,12 @@ app.use('/products', (req, res, next) => {
 
 app.use('/inventory', inventoryRoutes);
 
-app.use('/scheduling', schedulingRoutes);
+app.use('/scheduling', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, schedulingRoutes);
+
+app.use('/clients', (req,res,next)=>{ req.pool = pool; next(); }, clientRoutes);
 
 const PORT = process.env.PORT || 5000;
 
@@ -66,7 +72,9 @@ async function connectWithRetry() {
       await pool.query('SELECT 1');
       console.log('Conectado ao banco!');
       //chama o initDb.js aqui para iniciar as tabelas
-      await createTables();
+      if (process.env.INIT_DB === 'true') {
+        await createTables();
+      }
       return;
     } catch (err) {
       attempts++;
