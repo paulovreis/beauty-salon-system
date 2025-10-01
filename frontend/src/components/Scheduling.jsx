@@ -296,12 +296,20 @@ export default function Scheduling() {
       // Buscar dados completos (para garantir IDs corretos se necessários)
       const res = await axiosWithAuth(`/scheduling/${appointment.id}`)
       const a = res.data
+      
+      // Formatar a data corretamente para o input date
+      let formattedDate = a.appointment_date
+      if (formattedDate && typeof formattedDate === 'string') {
+        // Se a data vem com timestamp, pegar apenas a parte da data
+        formattedDate = formattedDate.split('T')[0]
+      }
+      
       setEditing({
         id: a.id,
         clientId: a.client_id,
         employeeId: String(a.employee_id),
         serviceId: String(a.service_id),
-        date: a.appointment_date,
+        date: formattedDate,
         time: a.appointment_time?.slice(0,5),
         notes: a.notes || ''
       })
@@ -320,11 +328,18 @@ export default function Scheduling() {
 
   const handleSaveEdit = async () => {
     if(!editing) return;
+    
+    // Validar campos obrigatórios
+    if (!editing.date || !editing.time || !editing.employeeId || !editing.serviceId) {
+      setToast({type:'error', message:'Preencha todos os campos obrigatórios (data, hora, funcionário e serviço)'});
+      return;
+    }
+    
     try {
       await SchedulingApi.update(editing.id, {
         appointment_date: editing.date,
         appointment_time: editing.time,
-        notes: editing.notes,
+        notes: editing.notes || '',
         employee_id: Number(editing.employeeId),
         service_id: Number(editing.serviceId)
       })
@@ -917,16 +932,24 @@ export default function Scheduling() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Data</Label>
-                  <Input type="date" value={editing.date} onChange={async e=> {
-                    const val = e.target.value; setEditing(prev=> ({...prev, date:val, time:''}));
-                    if(editing.employeeId){
-                      try { const slots = await SchedulingApi.getAvailableSlots(editing.employeeId, val); setAvailableSlots(slots||[]) } catch{}
-                    }
-                  }} />
+                  <Input 
+                    type="date" 
+                    value={editing.date || ''} 
+                    onChange={async e=> {
+                      const val = e.target.value; 
+                      setEditing(prev=> ({...prev, date:val, time:''}));
+                      if(editing.employeeId){
+                        try { 
+                          const slots = await SchedulingApi.getAvailableSlots(editing.employeeId, val); 
+                          setAvailableSlots(slots||[]) 
+                        } catch{}
+                      }
+                    }} 
+                  />
                 </div>
                 <div>
                   <Label>Hora</Label>
-                  <Select value={editing.time} onValueChange={(v)=> setEditing(prev=> ({...prev,time:v}))} disabled={!editing.date || !editing.employeeId}>
+                  <Select value={editing.time || ''} onValueChange={(v)=> setEditing(prev=> ({...prev,time:v}))} disabled={!editing.date || !editing.employeeId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Horário" />
                     </SelectTrigger>
@@ -940,7 +963,7 @@ export default function Scheduling() {
               </div>
               <div>
                 <Label>Observações</Label>
-                <Textarea value={editing.notes} onChange={e=> setEditing(prev=> ({...prev,notes:e.target.value}))} />
+                <Textarea value={editing.notes || ''} onChange={e=> setEditing(prev=> ({...prev,notes:e.target.value}))} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={()=>{ setEditModalOpen(false); setEditing(null)}}>Cancelar</Button>
