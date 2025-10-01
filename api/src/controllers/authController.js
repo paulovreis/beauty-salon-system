@@ -177,8 +177,8 @@ class AuthController {
             }
 
             // Validate input
-            if (!email || !newPassword) {
-                return res.status(400).json({ message: 'Email and new password are required' });
+            if (!email) {
+                return res.status(400).json({ message: 'Email is required' });
             }
 
             // Find user by email
@@ -238,8 +238,7 @@ class AuthController {
             // Hash new password
             const hashedPassword = bcrypt.hashSync(newPassword, 8);
 
-            // Update password in database
-            await pool.query('UPDATE users SET password_hash = $1 WHERE email = $2', [hashedPassword, email]);
+            await pool.query('UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE email = $2', [hashedPassword, user.email]);
 
             return res.status(200).json({ message: 'Password reset successfully' });
         } catch (error) {
