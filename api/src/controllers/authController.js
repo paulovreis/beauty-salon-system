@@ -150,17 +150,31 @@ class AuthController {
                 return res.status(401).json({ message: 'Token is required' });
             }
 
-            jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-                if (err) {
+            // Usa jwt.verify de forma síncrona com try/catch ou permite tokens expirados
+            let decoded;
+            try {
+                // Primeiro tenta verificar se o token ainda é válido
+                decoded = jwt.verify(token, process.env.JWT_SECRET);
+            } catch (err) {
+                // Se o token está expirado, tenta decodificar para pegar os dados do usuário
+                // Isso permite refresh de tokens expirados (comportamento esperado)
+                if (err.name === 'TokenExpiredError') {
+                    decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+                } else {
                     return res.status(403).json({ message: 'Invalid token' });
                 }
+            }
 
-                const newToken = jwt.sign({ id: decoded.id, role: decoded.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+            // Gera um novo token com os dados do usuário
+            const newToken = jwt.sign(
+                { id: decoded.id, role: decoded.role }, 
+                process.env.JWT_SECRET, 
+                { expiresIn: '1h' }
+            );
 
-                return res.status(200).json({
-                    message: 'Token refreshed successfully',
-                    token: newToken
-                });
+            return res.status(200).json({
+                message: 'Token refreshed successfully',
+                token: newToken
             });
         } catch (error) {
             console.error('Refresh token error:', error);

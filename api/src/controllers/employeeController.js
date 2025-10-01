@@ -8,8 +8,39 @@ const EmployeeController = {
   async list(req, res) {
     try {
       const db = getPool(req);
-      const { rows } = await db.query("SELECT * FROM employees ORDER BY id");
-      res.json(rows);
+      // Busca funcionários
+      const { rows: employees } = await db.query("SELECT * FROM employees ORDER BY id");
+      if(!employees.length) return res.json([]);
+      // Mês atual boundaries
+      const { rows: stats } = await db.query(`
+        SELECT employee_id,
+               COUNT(id) FILTER (WHERE status='completed') as services_completed,
+               COALESCE(SUM(price) FILTER (WHERE status='completed'),0) as total_revenue,
+               COALESCE(SUM(commission_amount) FILTER (WHERE status='completed'),0) as total_commission
+        FROM appointments
+        WHERE appointment_date >= date_trunc('month', CURRENT_DATE)
+          AND appointment_date < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
+        GROUP BY employee_id`);
+      const statMap = Object.fromEntries(stats.map(s=> [s.employee_id, s]));
+      // Especialidades
+      const { rows: specs } = await db.query(`SELECT employee_id, service_id, commission_rate FROM employee_specialties`);
+      const specMap = {};
+      specs.forEach(s=> { if(!specMap[s.employee_id]) specMap[s.employee_id]=[]; specMap[s.employee_id].push({ service_id: s.service_id, commission_rate: Number(s.commission_rate)}); });
+      const enriched = employees.map(e=> {
+        const st = statMap[e.id] || { services_completed:0, total_revenue:0, total_commission:0 };
+        const avg = st.services_completed ? Number(st.total_revenue)/Number(st.services_completed) : 0;
+        return {
+          ...e,
+            monthlyStats: {
+              servicesCompleted: Number(st.services_completed),
+              totalRevenue: Number(st.total_revenue),
+              totalCommission: Number(st.total_commission),
+              averageService: Number(avg.toFixed(2))
+            },
+            specialties: specMap[e.id] || []
+        };
+      });
+      res.json(enriched);
     } catch (err) {
       console.log("Erro ao buscar funcionários:", err);
       res.status(500).json({ message: "Erro ao buscar funcionários", error: err.message });
@@ -188,7 +219,7 @@ const EmployeeController = {
     try {
       const stats = await db.query(
         `SELECT COUNT(a.id) as total_services, COALESCE(SUM(a.price),0) as total_revenue, COALESCE(SUM(a.commission_amount),0) as total_commission
-                 FROM appointments a WHERE a.employee_id = $1 AND a.status IN ('completed', 'confirmed')`,
+                 FROM appointments a WHERE a.employee_id = $1 AND a.status = 'completed'`,
         [id]
       );
       res.json(stats.rows[0]);

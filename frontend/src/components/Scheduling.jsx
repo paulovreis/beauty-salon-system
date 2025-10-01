@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -16,89 +16,160 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Calendar } from "./ui/calendar"
 import { Textarea } from "./ui/textarea"
 import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar"
-import { Plus, Clock, User, CalendarIcon, Edit, Trash2, Phone } from "lucide-react"
+import { Plus, Clock, User, CalendarIcon, Edit, Trash2, Phone, ChevronDown, Check, XCircle } from "lucide-react"
+import { axiosWithAuth } from "./api/axiosWithAuth"
+import { SchedulingApi, ClientsApi } from "./api/scheduling"
 
 export default function Scheduling() {
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [appointments, setAppointments] = useState([
-    {
-      id: 1,
-      clientName: "Maria Silva",
-      clientPhone: "(11) 99999-1111",
-      service: "Coloração de Cabelo",
-      employee: "Ana Costa",
-      date: "2024-01-31",
-      time: "09:00",
-      duration: 120,
-      price: 180,
-      status: "confirmado",
-      notes: "Primeira vez, deseja luzes loiras",
-    },
-    {
-      id: 2,
-      clientName: "Julia Santos",
-      clientPhone: "(11) 99999-2222",
-      service: "Progressiva",
-      employee: "Carla Lima",
-      date: "2024-01-31",
-      time: "10:30",
-      duration: 180,
-      price: 250,
-      status: "confirmado",
-      notes: "Cliente regular, prefere marca específica",
-    },
-    {
-      id: 3,
-      clientName: "Pedro Oliveira",
-      clientPhone: "(11) 99999-3333",
-      service: "Corte",
-      employee: "Ana Costa",
-      date: "2024-01-31",
-      time: "14:00",
-      duration: 45,
-      price: 45,
-      status: "pendente",
-      notes: "",
-    },
-    {
-      id: 4,
-      clientName: "Lucia Ferreira",
-      clientPhone: "(11) 99999-4444",
-      service: "Manicure",
-      employee: "Beatriz Souza",
-      date: "2024-01-31",
-      time: "15:30",
-      duration: 45,
-      price: 35,
-      status: "confirmado",
-      notes: "Prefere esmalte em gel",
-    },
-  ])
+  const [appointments, setAppointments] = useState([])
+  const [loading, setLoading] = useState(false)
 
   const [newAppointment, setNewAppointment] = useState({
     clientName: "",
     clientPhone: "",
-    service: "",
-    employee: "",
+    serviceId: "",
+    employeeId: "",
     date: "",
     time: "",
     notes: "",
   })
 
-  const employees = [
-    { name: "Ana Costa", specialties: ["Coloração de Cabelo", "Progressiva", "Corte"] },
-    { name: "Carla Lima", specialties: ["Progressiva", "Queratina", "Tratamento Capilar"] },
-    { name: "Beatriz Souza", specialties: ["Manicure", "Pedicure", "Nail Art"] },
+  const [employees, setEmployees] = useState([])
+  const [services, setServices] = useState([])
+  const [availableSlots, setAvailableSlots] = useState([])
+  const [nextFive, setNextFive] = useState([])
+  const [upcoming, setUpcoming] = useState([])
+  const [upcomingLimit, setUpcomingLimit] = useState(10)
+  const [upcomingOffset, setUpcomingOffset] = useState(0)
+  const [upcomingHasMore, setUpcomingHasMore] = useState(true)
+  const [upcomingTotal, setUpcomingTotal] = useState(null)
+  const [upcomingLoading, setUpcomingLoading] = useState(false)
+  // Delete confirmation dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [statusMenuOpenId, setStatusMenuOpenId] = useState(null)
+  const statusMenuRef = useState(null)
+  const [clientSearch, setClientSearch] = useState('')
+  const [clientResults, setClientResults] = useState([])
+  const [showClientDropdown, setShowClientDropdown] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [toast, setToast] = useState(null) // {type,message}
+  const statusOptions = [
+    { value: 'scheduled', label: 'pendente' },
+    { value: 'confirmed', label: 'confirmado' },
+    { value: 'completed', label: 'completo' },
+    { value: 'canceled', label: 'cancelado' },
   ]
 
-  const services = [
-    { name: "Coloração de Cabelo", duration: 120, price: 180 },
-    { name: "Progressiva", duration: 180, price: 250 },
-    { name: "Corte", duration: 45, price: 45 },
-    { name: "Manicure", duration: 45, price: 35 },
-    { name: "Pedicure", duration: 60, price: 40 },
-    { name: "Queratina", duration: 150, price: 200 },
-  ]
+  const decodeJwt = (token) => {
+    try {
+      const payload = token.split('.')[1]
+      const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+      return JSON.parse(json)
+    } catch {
+      return null
+    }
+  }
+
+  // Load employees and services once
+  useEffect(() => {
+    (async () => {
+      try {
+        // Employees with fallback if role is employee
+        let employeesData = []
+        try {
+          const empRes = await axiosWithAuth('/employees')
+          employeesData = empRes.data || []
+        } catch (e) {
+          const token = localStorage.getItem('token')
+          const decoded = token ? decodeJwt(token) : null
+          if (decoded?.id) {
+            const selfRes = await axiosWithAuth(`/employees/${decoded.id}`)
+            if (selfRes?.data) employeesData = [selfRes.data]
+          }
+        }
+        const svcRes = await axiosWithAuth('/services')
+        setEmployees(employeesData)
+        setServices(svcRes.data || [])
+      } catch (e) {
+        console.error('Falha ao carregar listas:', e)
+      }
+    })()
+  }, [])
+
+  // Load appointments when selectedDate changes
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true)
+        const d = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+        console.log('Carregando agendamentos para data:', d)
+        const data = await SchedulingApi.getByDate(d)
+        console.log('Dados recebidos da API:', data)
+        const mapped = (data || []).map((a) => ({
+          id: a.id,
+          clientName: a.client_name,
+          clientPhone: a.client_phone || '',
+          service: a.service_name,
+          employee: a.employee_name,
+          employeeId: a.employee_id, // usar id para cálculos mais confiáveis
+          date: a.appointment_date,
+          time: a.appointment_time?.slice(0,5),
+          duration: a.duration_minutes,
+          price: Number(a.price || 0),
+          status: a.status,
+          notes: a.notes || '',
+          commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
+        }))
+        console.log('Agendamentos mapeados:', mapped)
+        setAppointments(mapped)
+      } catch (e) {
+        console.error('Falha ao carregar agendamentos:', e)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [selectedDate])
+
+  // Load available slots when employee/date changes in dialog
+  useEffect(() => {
+    (async () => {
+      if (!newAppointment.employeeId || !newAppointment.date) {
+        setAvailableSlots([])
+        return
+      }
+      try {
+        const slots = await SchedulingApi.getAvailableSlots(newAppointment.employeeId, newAppointment.date)
+        setAvailableSlots(slots || [])
+      } catch (e) {
+        console.error('Falha ao carregar horários disponíveis:', e)
+      }
+    })()
+  }, [newAppointment.employeeId, newAppointment.date])
+
+  // Load next five upcoming
+  useEffect(() => {
+    loadNextFive()
+    loadUpcoming(true)
+  }, [])
+
+  // Outside click for status dropdown & client dropdown
+  useEffect(()=>{
+    const handler = (e)=>{
+      if(statusMenuOpenId){
+        const menu = document.querySelector('[data-status-menu="true"]');
+        if(menu && !menu.contains(e.target)) setStatusMenuOpenId(null)
+      }
+      if(showClientDropdown){
+        const dd = document.getElementById('client-autocomplete');
+        if(dd && !dd.contains(e.target)) setShowClientDropdown(false)
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return ()=> document.removeEventListener('mousedown', handler);
+  },[statusMenuOpenId, showClientDropdown])
 
   const timeSlots = [
     "08:00",
@@ -124,85 +195,304 @@ export default function Scheduling() {
     "18:00",
   ]
 
+  const statusLabel = (status) => {
+    const s = (status || '').toLowerCase()
+    if (s === 'scheduled' || s === 'pendente') return 'pendente'
+    if (s === 'confirmed' || s === 'confirmado') return 'confirmado'
+    if (s === 'completed' || s === 'completo') return 'completo'
+    if (s === 'canceled' || s === 'cancelado') return 'cancelado'
+    return status || 'pendente'
+  }
   const getStatusColor = (status) => {
-    switch (status) {
-      case "confirmado":
-        return "default"
-      case "pendente":
-        return "secondary"
-      case "completo":
-        return "outline"
-      case "cancelado":
-        return "destructive"
+    const s = statusLabel(status)
+    switch (s) {
+      case 'confirmado':
+        return 'default'
+      case 'pendente':
+        return 'secondary'
+      case 'completo':
+        return 'outline'
+      case 'cancelado':
+        return 'destructive'
       default:
-        return "default"
+        return 'default'
     }
   }
 
-  const formatDate = (date) => {
-    // Se for uma string de data (YYYY-MM-DD), criar a data corretamente
-    if (typeof date === 'string' && date.includes('-')) {
-      const [year, month, day] = date.split('-').map(Number)
-      const localDate = new Date(year, month - 1, day)
-      return localDate.toLocaleDateString("pt-BR", {
-        weekday: "short",
-        month: "short", 
-        day: "numeric",
-      })
+  const formatDate = (val) => {
+    // Estratégia definitiva: trabalhar sempre com a substring YYYY-MM-DD e montar label sem usar parsing de string ISO (evita TZ)
+    try {
+      let ds = ''
+      if (typeof val === 'string') ds = val.slice(0,10) // pega os 10 primeiros caracteres se vier 'YYYY-MM-DD...' ou ISO
+      else if (val instanceof Date) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth()+1).padStart(2,'0');
+        const d = String(val.getDate()).padStart(2,'0');
+        ds = `${y}-${m}-${d}`
+      } else return 'Data inválida'
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return 'Data inválida'
+      const [y,m,d] = ds.split('-').map(Number)
+      const localDate = new Date(y, m-1, d) // local, não sofre rollback porque usamos componentes
+      const weekdays = ['dom.','seg.','ter.','qua.','qui.','sex.','sáb.']
+      const months = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.']
+      return `${weekdays[localDate.getDay()]} ${d} de ${months[m-1]}`
+    } catch(err){
+      console.error('Erro ao formatar data:', err, val)
+      return 'Data inválida'
     }
-    // Se for um objeto Date, usar diretamente
-    return new Date(date).toLocaleDateString("pt-BR", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    })
   }
 
-  const getAvailableEmployees = (service) => {
-    return employees.filter((emp) => emp.specialties.includes(service))
+  const getAvailableEmployees = (serviceId) => {
+    // If using specialties table would filter by serviceId; for now return all employees
+    return employees
   }
 
-  const getServiceDetails = (serviceName) => {
-    return services.find((s) => s.name === serviceName)
-  }
+  const getServiceDetails = (serviceId) => services.find((s) => String(s.id) === String(serviceId))
 
-  const handleAddAppointment = () => {
-    if (
-      newAppointment.clientName &&
-      newAppointment.service &&
-      newAppointment.employee &&
-      newAppointment.date &&
-      newAppointment.time
-    ) {
-      const serviceDetails = getServiceDetails(newAppointment.service)
-
-      const appointment = {
-        id: appointments.length + 1,
-        ...newAppointment,
-        duration: serviceDetails?.duration || 60,
-        price: serviceDetails?.price || 0,
-        status: "pendente",
+  const handleAddAppointment = async () => {
+    if (!newAppointment.clientName || !newAppointment.employeeId || !newAppointment.serviceId || !newAppointment.date || !newAppointment.time) return
+    try {
+      const payload = {
+        appointment_date: newAppointment.date,
+        appointment_time: newAppointment.time,
+        employee_id: Number(newAppointment.employeeId),
+        service_id: Number(newAppointment.serviceId),
+        client_name: newAppointment.clientName,
+        client_phone: newAppointment.clientPhone,
+        notes: newAppointment.notes,
       }
-
-      setAppointments([...appointments, appointment])
-      setNewAppointment({
-        clientName: "",
-        clientPhone: "",
-        service: "",
-        employee: "",
-        date: "",
-        time: "",
-        notes: "",
-      })
+      await SchedulingApi.create(payload)
+      // refresh list
+      const d = newAppointment.date
+      const data = await SchedulingApi.getByDate(d)
+      const mapped = (data || []).map((a) => ({
+        id: a.id,
+        clientName: a.client_name,
+        clientPhone: a.client_phone || '',
+        service: a.service_name,
+        employee: a.employee_name,
+        date: (a.appointment_date||'').slice(0,10),
+        time: a.appointment_time?.slice(0,5),
+        duration: a.duration_minutes,
+        price: Number(a.price || 0),
+        status: a.status,
+        notes: a.notes || '',
+      }))
+      setAppointments(mapped)
+      setNewAppointment({ clientName: "", clientPhone: "", serviceId: "", employeeId: "", date: "", time: "", notes: "" })
+      
+      // Refresh next five as well
+      await Promise.all([loadNextFive(), loadUpcoming(true)])
+      setToast({type:'success', message:'Agendamento criado'})
+  window.dispatchEvent(new CustomEvent('appointments:changed'))
+    } catch (e) {
+      console.error('Erro ao criar agendamento:', e)
+      setToast({type:'error', message:'Erro ao criar: '+(e.response?.data?.message || e.message)})
     }
   }
 
-  const todayAppointments = appointments.filter((apt) => {
-    // Criar data local a partir da string de data selecionada
-    const selectedDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
-    return apt.date === selectedDateStr
-  })
-  const upcomingAppointments = appointments.filter((apt) => new Date(apt.date) > new Date()).slice(0, 5)
+  const handleEditAppointment = async (appointment) => {
+    try {
+      // Buscar dados completos (para garantir IDs corretos se necessários)
+      const res = await axiosWithAuth(`/scheduling/${appointment.id}`)
+      const a = res.data
+      
+      // Formatar a data corretamente para o input date
+      let formattedDate = a.appointment_date
+      if (formattedDate && typeof formattedDate === 'string') {
+        // Se a data vem com timestamp, pegar apenas a parte da data
+        formattedDate = formattedDate.split('T')[0]
+      }
+      
+      setEditing({
+        id: a.id,
+        clientId: a.client_id,
+        employeeId: String(a.employee_id),
+        serviceId: String(a.service_id),
+        date: formattedDate,
+        time: a.appointment_time?.slice(0,5),
+        notes: a.notes || ''
+      })
+      // Pré-carrega slots disponíveis do funcionário/data atuais
+      if(a.employee_id && a.appointment_date){
+        try {
+          const slots = await SchedulingApi.getAvailableSlots(a.employee_id, a.appointment_date)
+          setAvailableSlots(slots || [])
+        }catch{}
+      }
+      setEditModalOpen(true)
+    }catch(err){
+      setToast({type:'error', message:'Falha ao carregar agendamento para edição'})
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    if(!editing) return;
+    
+    // Validar campos obrigatórios
+    if (!editing.date || !editing.time || !editing.employeeId || !editing.serviceId) {
+      setToast({type:'error', message:'Preencha todos os campos obrigatórios (data, hora, funcionário e serviço)'});
+      return;
+    }
+    
+    try {
+      await SchedulingApi.update(editing.id, {
+        appointment_date: editing.date,
+        appointment_time: editing.time,
+        notes: editing.notes || '',
+        employee_id: Number(editing.employeeId),
+        service_id: Number(editing.serviceId)
+      })
+      // refresh
+      const d = editing.date;
+      const data = await SchedulingApi.getByDate(d)
+      const mapped = (data || []).map(a=>({
+        id:a.id, clientName:a.client_name, clientPhone:a.client_phone||'', service:a.service_name, employee:a.employee_name,
+        date:a.appointment_date, time:a.appointment_time?.slice(0,5), duration:a.duration_minutes, price:Number(a.price||0), status:a.status, notes:a.notes||''
+      }))
+      setAppointments(mapped)
+      await Promise.all([loadNextFive(), loadUpcoming(true)])
+      setToast({type:'success', message:'Agendamento atualizado'})
+  window.dispatchEvent(new CustomEvent('appointments:changed'))
+    }catch(e){
+      setToast({type:'error', message:'Erro ao salvar edição: '+(e.response?.data?.message||e.message)})
+    }finally{
+      setEditModalOpen(false); setEditing(null)
+    }
+  }
+
+  const handleChangeStatus = async (appointment, newStatus) => {
+    try {
+      let updated;
+      if(newStatus==='confirmed') updated = await SchedulingApi.confirm(appointment.id)
+      else if(newStatus==='completed') updated = await SchedulingApi.complete(appointment.id)
+      else if(newStatus==='canceled') updated = await SchedulingApi.cancel(appointment.id)
+      else updated = await SchedulingApi.update(appointment.id,{status:newStatus})
+      setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: updated.status } : a))
+      await Promise.all([loadNextFive(), loadUpcoming(true)])
+      setToast({type:'success', message:'Status atualizado'})
+      // Dispara evento global para outras telas recarregarem stats
+      window.dispatchEvent(new CustomEvent('appointments:changed'))
+    } catch (e) {
+      setToast({type:'error', message:'Erro ao alterar status: '+(e.response?.data?.message || e.message)})
+    } finally {
+      setStatusMenuOpenId(null)
+    }
+  }
+
+  // Opens confirmation dialog
+  const handleRequestDelete = (appointment) => {
+    setDeleteTarget(appointment)
+    setShowDeleteDialog(true)
+  }
+
+  // Executes deletion after confirmation
+  const handleDeleteAppointment = async () => {
+    if (!deleteTarget) return
+    try {
+      await SchedulingApi.delete(deleteTarget.id)
+      // Refresh current date appointments
+      const selectedDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+      const data = await SchedulingApi.getByDate(selectedDateStr)
+      const mapped = (data || []).map((a) => ({
+        id: a.id,
+        clientName: a.client_name,
+        clientPhone: a.client_phone || '',
+        service: a.service_name,
+        employee: a.employee_name,
+        date: (a.appointment_date||'').slice(0,10),
+        time: a.appointment_time?.slice(0,5),
+        duration: a.duration_minutes,
+        price: Number(a.price || 0),
+        status: a.status,
+        notes: a.notes || '',
+      }))
+      setAppointments(mapped)
+      await Promise.all([loadNextFive(), loadUpcoming(true)])
+      setToast({type:'success', message:'Agendamento excluído'})
+  window.dispatchEvent(new CustomEvent('appointments:changed'))
+    } catch (e) {
+      console.error('Erro ao excluir agendamento:', e)
+      setToast({type:'error', message:'Erro ao excluir: '+(e.response?.data?.message || e.message)})
+    } finally {
+      setShowDeleteDialog(false)
+      setDeleteTarget(null)
+    }
+  }
+
+  const loadNextFive = async () => {
+    try {
+      const data = await SchedulingApi.getNextFive()
+      const mapped = (data || []).map((a) => ({
+        id: a.id,
+        clientName: a.client_name,
+        clientPhone: a.client_phone || '',
+        service: a.service_name,
+        employee: a.employee_name,
+        date: a.appointment_date,
+        time: a.appointment_time?.slice(0,5),
+        duration: a.duration_minutes,
+        price: Number(a.price || 0),
+        status: a.status,
+        notes: a.notes || '',
+      }))
+      setNextFive(mapped)
+    } catch (e) {
+      console.error('Falha ao carregar próximos 5 agendamentos:', e)
+    }
+  }
+
+  const loadUpcoming = async (reset=false) => {
+    if(upcomingLoading) return;
+    setUpcomingLoading(true)
+    try {
+      const _limit = upcomingLimit;
+      const _offset = reset ? 0 : upcomingOffset;
+      const resp = await SchedulingApi.getUpcomingPaginated(_limit,_offset)
+      const mapped = (resp.data || []).map(a=>({
+        id:a.id, clientName:a.client_name, clientPhone:a.client_phone||'', service:a.service_name, employee:a.employee_name, date:(a.appointment_date||'').slice(0,10),
+        time:a.appointment_time?.slice(0,5), duration:a.duration_minutes, price:Number(a.price||0), status:a.status, notes:a.notes||''
+      }))
+      if(reset){
+        setUpcoming(mapped)
+      } else {
+        // Evitar duplicados se backend retornar itens já carregados
+        setUpcoming(prev=>{
+          const existingIds = new Set(prev.map(p=>p.id))
+            const merged = [...prev]
+            mapped.forEach(m=> { if(!existingIds.has(m.id)) merged.push(m) })
+            return merged
+        })
+      }
+      setUpcomingOffset(_offset + mapped.length) // usar realmente o que veio
+      if(resp.total != null) setUpcomingTotal(resp.total)
+      if(typeof resp.hasMore === 'boolean'){
+        setUpcomingHasMore(resp.hasMore)
+      } else {
+        setUpcomingHasMore(mapped.length === _limit)
+      }
+    }catch(e){
+      console.error('Erro ao carregar agendamentos futuros paginados', e)
+    } finally {
+      setUpcomingLoading(false)
+    }
+  }
+
+  // Autocomplete clientes (debounce simples)
+  useEffect(()=>{
+    if(!clientSearch){ setClientResults([]); return; }
+    const t = setTimeout(async ()=>{
+      try {
+        const data = await ClientsApi.search(clientSearch)
+        setClientResults(data)
+        setShowClientDropdown(true)
+      }catch{}
+    },300)
+    return ()=> clearTimeout(t)
+  },[clientSearch])
+
+  const todayAppointments = appointments // já estão filtrados por data selecionada
+  const upcomingAppointments = upcoming.length ? upcoming : nextFive
 
   return (
     <div className="space-y-6">
@@ -227,12 +517,24 @@ export default function Scheduling() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="clientName">Nome do Cliente</Label>
-                  <Input
-                    id="clientName"
-                    value={newAppointment.clientName}
-                    onChange={(e) => setNewAppointment({ ...newAppointment, clientName: e.target.value })}
-                    placeholder="Maria Silva"
-                  />
+                  <div className="relative" id="client-autocomplete">
+                    <Input
+                      id="clientName"
+                      value={newAppointment.clientName}
+                      onChange={(e) => { setNewAppointment({ ...newAppointment, clientName: e.target.value }); setClientSearch(e.target.value) }}
+                      placeholder="Maria Silva"
+                      onFocus={()=> clientSearch && setShowClientDropdown(true)}
+                    />
+                    {showClientDropdown && clientResults.length>0 && (
+                      <div className="absolute z-20 bg-white border rounded w-full mt-1 max-h-48 overflow-auto text-sm shadow">
+                        {clientResults.map(c=> (
+                          <button key={c.id} className="block w-full text-left px-2 py-1 hover:bg-muted" onClick={()=>{ setNewAppointment({...newAppointment, clientName:c.name, clientPhone:c.phone}); setShowClientDropdown(false)}}>
+                            {c.name} <span className="text-xs text-muted-foreground">{c.phone}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="clientPhone">Telefone</Label>
@@ -248,9 +550,9 @@ export default function Scheduling() {
               <div>
                 <Label htmlFor="service">Serviço</Label>
                 <Select
-                  value={newAppointment.service}
+                  value={newAppointment.serviceId}
                   onValueChange={(value) => {
-                    setNewAppointment({ ...newAppointment, service: value, employee: "" })
+                    setNewAppointment({ ...newAppointment, serviceId: value, employeeId: "" })
                   }}
                 >
                   <SelectTrigger>
@@ -258,8 +560,8 @@ export default function Scheduling() {
                   </SelectTrigger>
                   <SelectContent>
                     {services.map((service) => (
-                      <SelectItem key={service.name} value={service.name}>
-                        {service.name} - {service.duration}min - R${service.price}
+                      <SelectItem key={service.id} value={String(service.id)}>
+                        {service.name} - {service.duration_minutes}min - R${service.recommended_price}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -269,17 +571,17 @@ export default function Scheduling() {
               <div>
                 <Label htmlFor="employee">Funcionário</Label>
                 <Select
-                  value={newAppointment.employee}
-                  onValueChange={(value) => setNewAppointment({ ...newAppointment, employee: value })}
-                  disabled={!newAppointment.service}
+                  value={newAppointment.employeeId}
+                  onValueChange={(value) => setNewAppointment({ ...newAppointment, employeeId: value })}
+                  disabled={!newAppointment.serviceId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o funcionário" />
                   </SelectTrigger>
                   <SelectContent>
-                    {newAppointment.service &&
-                      getAvailableEmployees(newAppointment.service).map((employee) => (
-                        <SelectItem key={employee.name} value={employee.name}>
+                    {newAppointment.serviceId &&
+                      getAvailableEmployees(newAppointment.serviceId).map((employee) => (
+                        <SelectItem key={employee.id} value={String(employee.id)}>
                           {employee.name}
                         </SelectItem>
                       ))}
@@ -302,16 +604,25 @@ export default function Scheduling() {
                   <Select
                     value={newAppointment.time}
                     onValueChange={(value) => setNewAppointment({ ...newAppointment, time: value })}
+                    disabled={!newAppointment.employeeId || !newAppointment.date}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o horário" />
                     </SelectTrigger>
                     <SelectContent>
-                      {timeSlots.map((time) => (
-                        <SelectItem key={time} value={time}>
-                          {time}
-                        </SelectItem>
-                      ))}
+                      {availableSlots.length > 0 ? (
+                        availableSlots.map((slot) => (
+                          <SelectItem key={slot.id} value={slot.start_time?.slice(0,5)}>
+                            {slot.start_time?.slice(0,5)} - {slot.end_time?.slice(0,5)}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        timeSlots.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -363,7 +674,7 @@ export default function Scheduling() {
                 day: "numeric",
               })} Agenda
             </CardTitle>
-            <CardDescription>{todayAppointments.length} agendamentos para hoje</CardDescription>
+            <CardDescription>{loading ? 'Carregando...' : `${todayAppointments.length} agendamentos para hoje`}</CardDescription>
           </CardHeader>
           <CardContent>
             {todayAppointments.length === 0 ? (
@@ -388,11 +699,35 @@ export default function Scheduling() {
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <Badge variant={getStatusColor(appointment.status)} className="mb-1">
-                          {appointment.status}
-                        </Badge>
-                        <div className="text-sm font-medium">R${appointment.price}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <Button variant="outline" size="sm" onClick={() => setStatusMenuOpenId(statusMenuOpenId === appointment.id ? null : appointment.id)} className="flex items-center gap-1">
+                            <span className="capitalize">{statusLabel(appointment.status)}</span>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                          {statusMenuOpenId === appointment.id && (
+                            <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border bg-white shadow">
+                              {statusOptions.map(opt => (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => handleChangeStatus(appointment, opt.value)}
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted ${statusLabel(appointment.status) === opt.label ? 'font-semibold' : ''}`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm font-medium w-20 text-right">R${Number(appointment.price || 0).toFixed(2)}</div>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditAppointment(appointment)}>
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleRequestDelete(appointment)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -406,7 +741,7 @@ export default function Scheduling() {
       <Card>
         <CardHeader>
           <CardTitle>Próximos Agendamentos</CardTitle>
-          <CardDescription>Próximos 5 agendamentos</CardDescription>
+          <CardDescription>Próximos agendamentos (paginados)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -441,15 +776,15 @@ export default function Scheduling() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={getStatusColor(appointment.status)}>{appointment.status}</Badge>
+                  <Badge variant={getStatusColor(appointment.status)}>{statusLabel(appointment.status)}</Badge>
                   <div className="text-right">
-                    <div className="font-medium">R${appointment.price}</div>
+                    <div className="font-medium">R${Number(appointment.price || 0).toFixed(2)}</div>
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" onClick={() => handleEditAppointment(appointment)}>
                       <Edit className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" onClick={() => handleRequestDelete(appointment)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
@@ -457,6 +792,18 @@ export default function Scheduling() {
               </div>
             ))}
           </div>
+          {upcomingHasMore && (
+            <div className="mt-4 flex justify-center">
+              <Button variant="outline" size="sm" disabled={upcomingLoading} onClick={()=> loadUpcoming(false)}>
+                {upcomingLoading ? 'Carregando...' : 'Ver mais'}
+              </Button>
+            </div>
+          )}
+          {upcomingTotal != null && (
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Exibindo {upcoming.length} de {upcomingTotal} agendamentos futuros
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -469,9 +816,24 @@ export default function Scheduling() {
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
             {employees.map((employee) => {
-              const employeeAppointments = todayAppointments.filter((apt) => apt.employee === employee.name)
-              const totalRevenue = employeeAppointments.reduce((sum, apt) => sum + apt.price, 0)
-              const totalDuration = employeeAppointments.reduce((sum, apt) => sum + apt.duration, 0)
+              // Filtra pelo id do funcionário quando disponível (fallback para nome)
+              const employeeAppointments = todayAppointments.filter((apt) => (
+                (apt.employeeId != null ? apt.employeeId === employee.id : apt.employee === employee.name)
+              ))
+
+              // Agendamentos considerados carga de trabalho (ainda a realizar)
+              const workloadStatuses = ['scheduled','confirmed','in_progress']
+              const workloadAppointments = employeeAppointments.filter(a => workloadStatuses.includes(a.status))
+
+              // Receita apenas de serviços concluídos
+              const revenueAppointments = employeeAppointments.filter(a => a.status === 'completed')
+              const totalRevenue = revenueAppointments.reduce((sum, apt) => sum + (apt.price || 0), 0)
+
+              // Duração total (minutos) apenas do que ainda vai acontecer hoje
+              const totalDuration = workloadAppointments.reduce((sum, apt) => sum + (apt.duration || 0), 0)
+
+              // Comissão: usar commissionAmount quando existir, senão fallback para 20% do preço
+              const totalCommission = revenueAppointments.reduce((sum, apt) => sum + (apt.commissionAmount != null ? apt.commissionAmount : (apt.price || 0) * 0.2), 0)
 
               return (
                 <div key={employee.name} className="p-4 border rounded-lg">
@@ -483,7 +845,7 @@ export default function Scheduling() {
                     </Avatar>
                     <div>
                       <div className="font-medium">{employee.name}</div>
-                      <div className="text-xs text-muted-foreground">{employeeAppointments.length} agendamentos</div>
+                      <div className="text-xs text-muted-foreground">{workloadAppointments.length} agendamentos ativos</div>
                     </div>
                   </div>
                   <div className="space-y-2 text-sm">
@@ -495,11 +857,11 @@ export default function Scheduling() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Receita:</span>
-                      <span className="font-medium">R${totalRevenue}</span>
+                      <span className="font-medium">R${totalRevenue.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Comissão:</span>
-                      <span className="font-medium text-green-600">R${Math.round(totalRevenue * 0.2)}</span>
+                      <span className="font-medium text-green-600">R${totalCommission.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -508,6 +870,120 @@ export default function Scheduling() {
           </div>
         </CardContent>
       </Card>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={(open) => { if(!open){ setShowDeleteDialog(false); setDeleteTarget(null) } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir este agendamento? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeleteTarget(null) }}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteAppointment}>Excluir</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* Edit Modal */}
+      <Dialog open={editModalOpen} onOpenChange={(o)=> { if(!o){ setEditModalOpen(false); setEditing(null)} }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Agendamento</DialogTitle>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Serviço</Label>
+                  <Select value={editing.serviceId} onValueChange={async (v)=> {
+                    // Ao trocar serviço, resetar employee e slots
+                    setEditing(prev=> ({...prev, serviceId:v, employeeId:'', time:''}))
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Serviço" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {services.map(s=> (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Funcionário</Label>
+                  <Select value={editing.employeeId} onValueChange={async (v)=> {
+                    setEditing(prev=> ({...prev, employeeId:v, time:''}))
+                    if(editing.date){
+                      try { const slots = await SchedulingApi.getAvailableSlots(v, editing.date); setAvailableSlots(slots||[]) } catch{}
+                    }
+                  }} disabled={!editing.serviceId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Funcionário" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employees.map(emp=> (
+                        <SelectItem key={emp.id} value={String(emp.id)}>{emp.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Data</Label>
+                  <Input 
+                    type="date" 
+                    value={editing.date || ''} 
+                    onChange={async e=> {
+                      const val = e.target.value; 
+                      setEditing(prev=> ({...prev, date:val, time:''}));
+                      if(editing.employeeId){
+                        try { 
+                          const slots = await SchedulingApi.getAvailableSlots(editing.employeeId, val); 
+                          setAvailableSlots(slots||[]) 
+                        } catch{}
+                      }
+                    }} 
+                  />
+                </div>
+                <div>
+                  <Label>Hora</Label>
+                  <Select value={editing.time || ''} onValueChange={(v)=> setEditing(prev=> ({...prev,time:v}))} disabled={!editing.date || !editing.employeeId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Horário" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSlots.length>0 ? availableSlots.map(slot=> (
+                        <SelectItem key={slot.id} value={slot.start_time?.slice(0,5)}>{slot.start_time?.slice(0,5)} - {slot.end_time?.slice(0,5)}</SelectItem>
+                      )) : timeSlots.map(t=> <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Observações</Label>
+                <Textarea value={editing.notes || ''} onChange={e=> setEditing(prev=> ({...prev,notes:e.target.value}))} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={()=>{ setEditModalOpen(false); setEditing(null)}}>Cancelar</Button>
+                <Button onClick={handleSaveEdit}>Salvar</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 px-4 py-2 rounded shadow text-sm text-white ${toast.type==='error'?'bg-red-600':'bg-green-600'}`}
+             onAnimationEnd={()=>{ /* could add auto dismiss */ }}>
+          <div className="flex items-center gap-2">
+            {toast.type==='error'? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+            <span>{toast.message}</span>
+            <button className="ml-2 text-xs underline" onClick={()=> setToast(null)}>fechar</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
