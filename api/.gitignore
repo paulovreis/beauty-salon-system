@@ -37,3 +37,5 @@ coverage/
 *.swp
 *.bak
 *.tmp
+
+seed_appointments.js
