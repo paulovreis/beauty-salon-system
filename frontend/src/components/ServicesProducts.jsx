@@ -88,10 +88,14 @@ export default function ServicesProducts() {
     setLoading(true);
     setError("");
     try {
-      const res = await axiosWithAuth("/products/", { method: "get" });
-      setProducts(res.data);
+      const res = await axiosWithAuth("/inventory", { method: "get" });
+      // O endpoint /inventory retorna { products: [...], pagination: {...} }
+      const productsData = res.data?.products || [];
+      // Garantir que products seja sempre um array
+      setProducts(Array.isArray(productsData) ? productsData : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setProducts([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
     }
@@ -103,9 +107,11 @@ export default function ServicesProducts() {
       const res = await axiosWithAuth("/products/categories", {
         method: "get",
       });
-      setProductCategories(res.data);
+      // Garantir que productCategories seja sempre um array
+      setProductCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setProductCategories([]); // Definir como array vazio em caso de erro
     }
   }
 
@@ -150,9 +156,11 @@ export default function ServicesProducts() {
     setError("");
     try {
       const res = await axiosWithAuth("/services/", { method: "get" });
-      setServices(res.data);
+      // Garantir que services seja sempre um array
+      setServices(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setServices([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
     }
@@ -163,9 +171,11 @@ export default function ServicesProducts() {
       const res = await axiosWithAuth("/services/categories", {
         method: "get",
       });
-      setCategories(res.data);
+      // Garantir que categories seja sempre um array
+      setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setCategories([]); // Definir como array vazio em caso de erro
     }
   }
 
@@ -719,7 +729,7 @@ export default function ServicesProducts() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {services.map((service) => (
+            {Array.isArray(services) && services.length > 0 ? services.map((service) => (
               <Card key={service.id}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -776,7 +786,11 @@ export default function ServicesProducts() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )) : (
+              <div className="col-span-full text-center py-8 text-gray-500">
+                {loading ? "Carregando serviços..." : "Nenhum serviço encontrado."}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -967,7 +981,7 @@ export default function ServicesProducts() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => (
+            {Array.isArray(products) && products.length > 0 ? products.map((product) => (
               <Card key={product.id}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -1049,7 +1063,11 @@ export default function ServicesProducts() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )) : (
+              <div className="col-span-full text-center py-8 text-gray-500">
+                {loading ? "Carregando produtos..." : "Nenhum produto encontrado."}
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>

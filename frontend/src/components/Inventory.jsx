@@ -33,14 +33,17 @@ export default function Inventory() {
       setLoading(true);
       setError("");
       try {
-        // Buscar produtos via productController
-        const productsRes = await axiosWithAuth("/products");
+        // Buscar produtos via inventoryController
+        const inventoryRes = await axiosWithAuth("/inventory");
         const categoriesRes = await axiosWithAuth("/products/categories");
         
-        setCategories(categoriesRes.data);
+        setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : []);
         
-        // Mapeia os produtos do productController para o formato do inventory
-        const mapped = productsRes.data.map((item) => ({
+        // Mapeia os produtos do inventoryController para o formato do inventory
+        // O inventoryController retorna { products: [...], pagination: {...} }
+        const inventoryData = inventoryRes.data?.products || [];
+        const productsData = Array.isArray(inventoryData) ? inventoryData : [];
+        const mapped = productsData.map((item) => ({
           id: item.id,
           name: item.name,
           category: item.category_name || "",
@@ -56,7 +59,8 @@ export default function Inventory() {
           lastSold: item.last_sold,
           daysSinceLastSale: item.days_since_last_sale || 0,
           monthlyUsage: item.monthly_usage || 0,
-          status: getStatus(item),
+          status: item.stock_status || getStatus(item), // Usa stock_status do InventoryController
+          profitPerUnit: item.profit_per_unit || 0, // Campo adicional do InventoryController
         }));
         setInventory(mapped);
       } catch (err) {

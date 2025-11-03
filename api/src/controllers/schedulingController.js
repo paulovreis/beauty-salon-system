@@ -55,29 +55,106 @@ class SchedulingController {
 	//     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 	//   );
 
-	// get all schedulings
+	// get all schedulings - Otimizado com paginação e filtros
 	async getAllSchedulings(req, res) {
 		const pool = req.pool;
 		try {
+			const { 
+				page = 1, 
+				limit = 50, 
+				status, 
+				employee_id, 
+				start_date, 
+				end_date,
+				client_search 
+			} = req.query;
+			
+			const offset = (page - 1) * limit;
+			let whereConditions = [];
+			let queryParams = [];
+			let paramIndex = 1;
+
+			if (status) {
+				whereConditions.push(`a.status = $${paramIndex}`);
+				queryParams.push(status);
+				paramIndex++;
+			}
+
+			if (employee_id) {
+				whereConditions.push(`a.employee_id = $${paramIndex}`);
+				queryParams.push(employee_id);
+				paramIndex++;
+			}
+
+			if (start_date) {
+				whereConditions.push(`a.appointment_date >= $${paramIndex}`);
+				queryParams.push(start_date);
+				paramIndex++;
+			}
+
+			if (end_date) {
+				whereConditions.push(`a.appointment_date <= $${paramIndex}`);
+				queryParams.push(end_date);
+				paramIndex++;
+			}
+
+			if (client_search) {
+				whereConditions.push(`c.name ILIKE $${paramIndex}`);
+				queryParams.push(`%${client_search}%`);
+				paramIndex++;
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query principal otimizada usando índices
 			const { rows } = await pool.query(`
-				SELECT a.id,
-					   a.appointment_date,
-					   a.appointment_time,
-					   a.status,
-					   a.duration_minutes,
-					   a.price,
-					   c.name as client_name,
-					   c.phone as client_phone,
-					   e.name as employee_name,
-					   s.name as service_name
-                FROM appointments a
-                JOIN clients c ON a.client_id = c.id
-                JOIN employees e ON a.employee_id = e.id
-                JOIN services s ON a.service_id = s.id
+				SELECT 
+					a.id,
+					a.appointment_date,
+					a.appointment_time,
+					a.status,
+					a.duration_minutes,
+					a.price,
+					a.notes,
+					c.name as client_name,
+					c.phone as client_phone,
+					e.name as employee_name,
+					s.name as service_name,
+					CASE 
+						WHEN a.appointment_date < CURRENT_DATE THEN 'past'
+						WHEN a.appointment_date = CURRENT_DATE THEN 'today'
+						ELSE 'future'
+					END as time_status
+				FROM appointments a
+				JOIN clients c ON a.client_id = c.id
+				JOIN employees e ON a.employee_id = e.id
+				JOIN services s ON a.service_id = s.id
+				${whereClause}
 				ORDER BY a.appointment_date DESC, a.appointment_time DESC
-            `);
-			res.json(rows);
+				LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+			`, [...queryParams, limit, offset]);
+
+			// Count para paginação
+			const { rows: countRows } = await pool.query(`
+				SELECT COUNT(*) as total 
+				FROM appointments a
+				JOIN clients c ON a.client_id = c.id
+				JOIN employees e ON a.employee_id = e.id
+				JOIN services s ON a.service_id = s.id
+				${whereClause}
+			`, queryParams);
+
+			res.json({
+				appointments: rows,
+				pagination: {
+					currentPage: parseInt(page),
+					totalItems: parseInt(countRows[0].total),
+					itemsPerPage: parseInt(limit),
+					totalPages: Math.ceil(countRows[0].total / limit)
+				}
+			});
 		} catch (err) {
+			console.error('Erro ao buscar agendamentos:', err);
 			res
 				.status(500)
 				.json({ message: "Erro ao buscar agendamentos", error: err.message });

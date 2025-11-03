@@ -18,6 +18,7 @@ router.get('/recent-appointments', authenticateJWT, roleMiddleware(['owner', 'ma
 router.get('/top-employees', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getTopEmployees);
 router.get('/revenue-summary', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getRevenueSummary);
 router.get('/expense-breakdown', authenticateJWT, roleMiddleware(['owner']), dashboardController.getExpenseBreakdown);
+router.get('/expense-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getExpenseAnalysis);
 
 // Novas rotas de análise avançada
 router.get('/revenue-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getRevenueAnalysis);

@@ -11,6 +11,7 @@ import productRoutes from './routes/productRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import schedulingRoutes from './routes/schedulingRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
+import expenseRoutes from './routes/expenseRoutes.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -54,7 +55,10 @@ app.use('/products', (req, res, next) => {
   next();
 }, productRoutes);
 
-app.use('/inventory', inventoryRoutes);
+app.use('/inventory', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, inventoryRoutes);
 
 app.use('/scheduling', (req, res, next) => {
   req.pool = pool;
@@ -62,6 +66,11 @@ app.use('/scheduling', (req, res, next) => {
 }, schedulingRoutes);
 
 app.use('/clients', (req,res,next)=>{ req.pool = pool; next(); }, clientRoutes);
+
+app.use('/expenses', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, expenseRoutes);
 
 const PORT = process.env.PORT || 5000;
 

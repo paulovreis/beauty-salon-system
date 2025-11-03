@@ -116,6 +116,49 @@ export const validateResetToken = [
 	validationMiddleware,
 ];
 
+// Despesas
+export const validateExpenseCreate = [
+	body("category").isString().notEmpty().withMessage("Categoria é obrigatória"),
+	body("description").isString().notEmpty().withMessage("Descrição é obrigatória"),
+	body("amount").isNumeric().withMessage("Valor deve ser numérico").custom((value) => {
+		if (value <= 0) {
+			throw new Error("Valor deve ser maior que zero");
+		}
+		return true;
+	}),
+	body("expense_date").isISO8601().toDate().withMessage("Data da despesa inválida"),
+	body("payment_method").isString().notEmpty().withMessage("Método de pagamento é obrigatório"),
+	body("receipt_number").optional().isString(),
+	body("notes").optional().isString(),
+	validationMiddleware,
+];
+
+export const validateExpenseUpdate = [
+	body("category").optional().isString().notEmpty().withMessage("Categoria não pode ser vazia"),
+	body("description").optional().isString().notEmpty().withMessage("Descrição não pode ser vazia"),
+	body("amount").optional().isNumeric().withMessage("Valor deve ser numérico").custom((value) => {
+		if (value && value <= 0) {
+			throw new Error("Valor deve ser maior que zero");
+		}
+		return true;
+	}),
+	body("expense_date").optional().isISO8601().toDate().withMessage("Data da despesa inválida"),
+	body("payment_method").optional().isString().notEmpty().withMessage("Método de pagamento não pode ser vazio"),
+	body("receipt_number").optional().isString(),
+	body("notes").optional().isString(),
+	validationMiddleware,
+];
+
+export const validateExpenseQuery = [
+	query("page").optional().isInt({ min: 1 }).withMessage("Página deve ser um número inteiro positivo"),
+	query("limit").optional().isInt({ min: 1, max: 100 }).withMessage("Limite deve ser entre 1 e 100"),
+	query("category").optional().isString(),
+	query("start_date").optional().isISO8601().withMessage("Data de início inválida"),
+	query("end_date").optional().isISO8601().withMessage("Data de fim inválida"),
+	query("search").optional().isString(),
+	validationMiddleware,
+];
+
 export const validateGetServiceById = [
 	param("id").isInt().withMessage("ID do serviço deve ser um inteiro"),
 	validationMiddleware,

@@ -4,16 +4,74 @@ class ProductController {
   async getAllProducts(req, res) {
     const db = req.pool;
     try {
+      const { page = 1, limit = 50, category_id, search, include_inactive } = req.query;
+      const offset = (page - 1) * limit;
+      
+      let whereConditions = [];
+      let queryParams = [];
+      let paramIndex = 1;
+
+      // Filtro de status ativo (padrão)
+      if (include_inactive !== 'true') {
+        whereConditions.push(`p.is_active = true`);
+      }
+
+      if (category_id) {
+        whereConditions.push(`p.category_id = $${paramIndex}`);
+        queryParams.push(category_id);
+        paramIndex++;
+      }
+
+      if (search) {
+        whereConditions.push(`(p.name ILIKE $${paramIndex} OR p.sku ILIKE $${paramIndex})`);
+        queryParams.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+      // Query otimizada com informações adicionais
       const { rows } = await db.query(`
-                SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
-                       p.last_restocked, p.is_active, p.created_at, p.updated_at, 
-                       c.name as category_name
-                FROM products p
-                LEFT JOIN product_categories c ON p.category_id = c.id
-                ORDER BY p.name
-            `);
-      res.json(rows);
+        SELECT 
+          p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
+          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+          p.last_restocked, p.is_active, p.created_at, p.updated_at,
+          c.name as category_name,
+          CASE 
+            WHEN p.current_stock = 0 THEN 'out_of_stock'
+            WHEN p.current_stock <= p.min_stock_level THEN 'low_stock'
+            WHEN p.current_stock >= p.max_stock_level THEN 'overstock'
+            ELSE 'normal'
+          END as stock_status,
+          (p.selling_price - p.cost_price) as profit_margin_value,
+          CASE 
+            WHEN p.cost_price > 0 THEN ROUND(((p.selling_price - p.cost_price) / p.cost_price * 100)::numeric, 2)
+            ELSE 0
+          END as profit_percentage
+        FROM products p
+        LEFT JOIN product_categories c ON p.category_id = c.id
+        ${whereClause}
+        ORDER BY p.name
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `, [...queryParams, limit, offset]);
+
+      // Count para paginação
+      const { rows: countRows } = await db.query(`
+        SELECT COUNT(*) as total 
+        FROM products p 
+        LEFT JOIN product_categories c ON p.category_id = c.id
+        ${whereClause}
+      `, queryParams);
+
+      res.json({
+        products: rows,
+        pagination: {
+          currentPage: parseInt(page),
+          totalItems: parseInt(countRows[0].total),
+          itemsPerPage: parseInt(limit),
+          totalPages: Math.ceil(countRows[0].total / limit)
+        }
+      });
     } catch (err) {
       console.log("Erro ao buscar produtos:", err);
       res

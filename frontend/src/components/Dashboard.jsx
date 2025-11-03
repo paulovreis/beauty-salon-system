@@ -51,10 +51,11 @@ export default function Dashboard() {
           axiosWithAuth(`${API_URL}/dashboard/expense-breakdown`, { method: "get" })
         ])
         setStats(statsRes.data)
-        setRecent(recentRes.data)
-        setTopEmployees(topRes.data)
+        setRecent(Array.isArray(recentRes.data) ? recentRes.data : [])
+        setTopEmployees(Array.isArray(topRes.data) ? topRes.data : [])
         setRevenue(revenueRes.data)
-        setExpenses(expenseRes.data)
+        // O expense-breakdown retorna um objeto com by_category como array
+        setExpenses(Array.isArray(expenseRes.data?.by_category) ? expenseRes.data.by_category : [])
       } catch (err) {
         // Se for erro de permissão, mostre mensagem clara
         if (err.message && err.message.toLowerCase().includes("acesso negado")) {
@@ -76,10 +77,10 @@ export default function Dashboard() {
 
   // Exemplo de cálculo de valores para exibir
   const monthlyStats = stats ? {
-    revenue: revenue?.totalAppointmentsRevenue + revenue?.totalSalesRevenue,
-    profit: (revenue?.totalAppointmentsRevenue + revenue?.totalSalesRevenue) - expenses.reduce((acc, e) => acc + Number(e.total), 0),
-    profitMargin: revenue && expenses.length ? Math.round(100 * ((revenue.totalAppointmentsRevenue + revenue.totalSalesRevenue - expenses.reduce((acc, e) => acc + Number(e.total), 0)) / (revenue.totalAppointmentsRevenue + revenue.totalSalesRevenue || 1))) : 0,
-    servicesCompleted: stats.totalAppointments,
+    revenue: (revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0),
+    profit: ((revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0)) - (Array.isArray(expenses) ? expenses.reduce((acc, e) => acc + Number(e.total || 0), 0) : 0),
+    profitMargin: revenue && Array.isArray(expenses) && expenses.length ? Math.round(100 * (((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) - expenses.reduce((acc, e) => acc + Number(e.total || 0), 0)) / ((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) || 1))) : 0,
+    servicesCompleted: stats.totalAppointments || 0,
     newClients: 0, // Pode ser implementado no backend
     inventoryValue: 0, // Pode ser implementado no backend
     lowStockItems: 0 // Pode ser implementado no backend
@@ -202,16 +203,17 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
-            {expenses.length === 0 ? (
+            {!Array.isArray(expenses) || expenses.length === 0 ? (
               <div className="text-center text-muted-foreground col-span-3">Nenhuma despesa encontrada.</div>
             ) : (
               expenses.map((item) => (
-                <div key={item.category} className="space-y-2">
+                <div key={item.category || Math.random()} className="space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-sm">{item.category}</span>
-                    <span className="text-sm font-medium">R${Number(item.total).toLocaleString()}</span>
+                    <span className="text-sm">{item.category_name || item.category || 'Categoria não informada'}</span>
+                    <span className="text-sm font-medium">R${Number(item.total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
                   </div>
-                  <Progress value={Number(item.total)} className="h-2" />
+                  <Progress value={Math.min((Number(item.total || 0) / 1000) * 10, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground">{item.count || 0} transações</p>
                 </div>
               ))
             )}

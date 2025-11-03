@@ -115,14 +115,67 @@ class DashboardController {
   async getExpenseBreakdown(req, res) {
     const pool = req.pool;
     try {
-      const { rows } = await pool.query(`
-        SELECT category, SUM(amount) as total
-        FROM expenses
-        GROUP BY category
+      // Despesas por categoria (últimos 30 dias)
+      const { rows: categoryBreakdown } = await pool.query(`
+        SELECT 
+          e.category,
+          ec.name as category_name,
+          ec.color,
+          ec.icon,
+          COUNT(*) as count,
+          SUM(e.amount) as total,
+          AVG(e.amount) as average,
+          MIN(e.amount) as min_amount,
+          MAX(e.amount) as max_amount
+        FROM expenses e
+        LEFT JOIN expense_categories ec ON e.category = ec.name
+        WHERE e.expense_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY e.category, ec.name, ec.color, ec.icon
         ORDER BY total DESC
       `);
-      res.json(rows);
+
+      // Despesas por método de pagamento
+      const { rows: paymentBreakdown } = await pool.query(`
+        SELECT 
+          payment_method,
+          COUNT(*) as count,
+          SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY payment_method
+        ORDER BY total DESC
+      `);
+
+      // Comparação com período anterior
+      const { rows: currentPeriod } = await pool.query(`
+        SELECT SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '30 days'
+      `);
+
+      const { rows: previousPeriod } = await pool.query(`
+        SELECT SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '60 days'
+        AND expense_date < CURRENT_DATE - INTERVAL '30 days'
+      `);
+
+      const currentTotal = parseFloat(currentPeriod[0]?.total || 0);
+      const previousTotal = parseFloat(previousPeriod[0]?.total || 0);
+      const changePercentage = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal * 100) : 0;
+
+      res.json({
+        by_category: categoryBreakdown,
+        by_payment_method: paymentBreakdown,
+        period_comparison: {
+          current_period: currentTotal,
+          previous_period: previousTotal,
+          change_percentage: parseFloat(changePercentage.toFixed(2)),
+          change_amount: currentTotal - previousTotal
+        }
+      });
     } catch (err) {
+      console.error('Erro ao buscar breakdown de despesas:', err);
       res.status(500).json({ message: 'Erro ao buscar despesas', error: err.message });
     }
   }
@@ -617,6 +670,123 @@ class DashboardController {
       });
     } catch (err) {
       res.status(500).json({ message: 'Erro ao buscar análise preditiva', error: err.message });
+    }
+  }
+
+  // Nova análise específica de despesas
+  async getExpenseAnalysis(req, res) {
+    const pool = req.pool;
+    try {
+      // Evolução mensal das despesas (últimos 12 meses)
+      const { rows: monthlyTrend } = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', expense_date) as month,
+          COUNT(*) as count,
+          SUM(amount) as total,
+          AVG(amount) as average
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', expense_date)
+        ORDER BY month ASC
+      `);
+
+      // Top 5 maiores despesas do mês atual
+      const { rows: topExpenses } = await pool.query(`
+        SELECT 
+          description,
+          category,
+          amount,
+          expense_date,
+          payment_method
+        FROM expenses 
+        WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)
+        ORDER BY amount DESC
+        LIMIT 5
+      `);
+
+      // Despesas recorrentes identificadas
+      const { rows: recurringExpenses } = await pool.query(`
+        SELECT 
+          description,
+          category,
+          COUNT(*) as frequency,
+          AVG(amount) as avg_amount,
+          SUM(amount) as total_amount,
+          MIN(expense_date) as first_date,
+          MAX(expense_date) as last_date
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY description, category
+        HAVING COUNT(*) >= 2
+        ORDER BY frequency DESC, total_amount DESC
+        LIMIT 10
+      `);
+
+      // Análise de sazonalidade (por dia da semana)
+      const { rows: weekdayAnalysis } = await pool.query(`
+        SELECT 
+          EXTRACT(DOW FROM expense_date) as day_of_week,
+          CASE EXTRACT(DOW FROM expense_date)
+            WHEN 0 THEN 'Domingo'
+            WHEN 1 THEN 'Segunda'
+            WHEN 2 THEN 'Terça'
+            WHEN 3 THEN 'Quarta'
+            WHEN 4 THEN 'Quinta'
+            WHEN 5 THEN 'Sexta'
+            WHEN 6 THEN 'Sábado'
+          END as day_name,
+          COUNT(*) as count,
+          SUM(amount) as total,
+          AVG(amount) as average
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '3 months'
+        GROUP BY EXTRACT(DOW FROM expense_date)
+        ORDER BY day_of_week
+      `);
+
+      // Comparação com receitas (se existir tabela de receitas/vendas)
+      const { rows: revenueComparison } = await pool.query(`
+        WITH monthly_expenses AS (
+          SELECT 
+            DATE_TRUNC('month', expense_date) as month,
+            SUM(amount) as total_expenses
+          FROM expenses 
+          WHERE expense_date >= CURRENT_DATE - INTERVAL '6 months'
+          GROUP BY DATE_TRUNC('month', expense_date)
+        ),
+        monthly_revenue AS (
+          SELECT 
+            DATE_TRUNC('month', appointment_date) as month,
+            SUM(price) as total_revenue
+          FROM appointments 
+          WHERE appointment_date >= CURRENT_DATE - INTERVAL '6 months'
+          AND status = 'completed'
+          GROUP BY DATE_TRUNC('month', appointment_date)
+        )
+        SELECT 
+          COALESCE(e.month, r.month) as month,
+          COALESCE(e.total_expenses, 0) as expenses,
+          COALESCE(r.total_revenue, 0) as revenue,
+          CASE 
+            WHEN COALESCE(r.total_revenue, 0) > 0 
+            THEN (COALESCE(e.total_expenses, 0) / COALESCE(r.total_revenue, 0) * 100)
+            ELSE 0 
+          END as expense_ratio
+        FROM monthly_expenses e
+        FULL OUTER JOIN monthly_revenue r ON e.month = r.month
+        ORDER BY month ASC
+      `);
+
+      res.json({
+        monthly_trend: monthlyTrend,
+        top_expenses: topExpenses,
+        recurring_expenses: recurringExpenses,
+        weekday_analysis: weekdayAnalysis,
+        revenue_comparison: revenueComparison
+      });
+    } catch (err) {
+      console.error('Erro ao buscar análise de despesas:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de despesas', error: err.message });
     }
   }
 
