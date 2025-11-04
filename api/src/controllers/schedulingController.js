@@ -627,12 +627,80 @@ class SchedulingController {
 	async getAvailableTimeSlots(req, res) {
 		const pool = req.pool;
 		const { employeeId, date } = req.params;
+		const { serviceId, excludeAppointmentId } = req.query;
+		
 		try {
-			const { rows } = await pool.query(
-				`SELECT id, employee_id, date, start_time, end_time, is_available FROM time_slots WHERE employee_id = $1 AND date = $2 AND is_available = TRUE ORDER BY start_time ASC`,
-				[employeeId, date]
-			);
-			res.json(rows);
+			// Buscar duração do serviço se fornecido
+			let serviceDuration = 30; // padrão
+			if (serviceId) {
+				const serviceResult = await pool.query(
+					`SELECT duration_minutes FROM services WHERE id = $1`,
+					[serviceId]
+				);
+				if (serviceResult.rows.length > 0) {
+					serviceDuration = serviceResult.rows[0].duration_minutes;
+				}
+			}
+
+			// Buscar agendamentos existentes para o funcionário na data (excluindo o próprio se em edição)
+			let existingQuery = `
+				SELECT appointment_time, duration_minutes 
+				FROM appointments 
+				WHERE employee_id = $1 AND appointment_date = $2 AND status != 'canceled'
+			`;
+			let queryParams = [employeeId, date];
+
+			if (excludeAppointmentId) {
+				existingQuery += ` AND id != $3`;
+				queryParams.push(excludeAppointmentId);
+			}
+
+			const { rows: existingAppointments } = await pool.query(existingQuery, queryParams);
+
+			// Gerar slots de 30 minutos das 08:00 às 18:00
+			const slots = [];
+			for (let hour = 8; hour < 18; hour++) {
+				for (let minute = 0; minute < 60; minute += 30) {
+					const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+					
+					// Calcular se o serviço cabe neste slot
+					const slotStartMinutes = this.timeToMinutes(timeStr);
+					const serviceEndMinutes = slotStartMinutes + serviceDuration;
+					
+					// Verificar se o serviço se estende além do horário de funcionamento (18:00)
+					if (serviceEndMinutes > this.timeToMinutes('18:00')) {
+						continue; // Não adicionar este slot se o serviço não cabe
+					}
+					
+					// Verificar se há conflito com agendamentos existentes
+					const hasConflict = existingAppointments.some(apt => {
+						if (!apt.appointment_time) return false;
+						
+						const aptStartMinutes = this.timeToMinutes(apt.appointment_time.slice(0, 5));
+						const aptEndMinutes = aptStartMinutes + (apt.duration_minutes || 30);
+						
+						// Verifica sobreposição entre o novo serviço e o agendamento existente
+						return !(serviceEndMinutes <= aptStartMinutes || slotStartMinutes >= aptEndMinutes);
+					});
+
+					if (!hasConflict) {
+						const endHour = minute === 30 ? hour + 1 : hour;
+						const endMinute = minute === 30 ? 0 : minute + 30;
+						const endTimeStr = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+						
+						slots.push({
+							id: `dynamic-${hour}-${minute}`,
+							employee_id: employeeId,
+							date: date,
+							start_time: timeStr,
+							end_time: endTimeStr,
+							is_available: true
+						});
+					}
+				}
+			}
+
+			res.json(slots);
 		} catch (err) {
 			res
 				.status(500)
@@ -641,6 +709,12 @@ class SchedulingController {
 					error: err.message,
 				});
 		}
+	}
+
+	// Método auxiliar para converter horário em minutos
+	timeToMinutes(timeStr) {
+		const [hours, minutes] = timeStr.split(':').map(Number);
+		return hours * 60 + minutes;
 	}
 
 	async transitionStatus(req,res,newStatus){

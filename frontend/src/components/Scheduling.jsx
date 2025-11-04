@@ -133,21 +133,26 @@ export default function Scheduling() {
     })()
   }, [selectedDate])
 
-  // Load available slots when employee/date changes in dialog
+  // Load available slots when employee/date/service changes in dialog
   useEffect(() => {
     (async () => {
-      if (!newAppointment.employeeId || !newAppointment.date) {
+      if (!newAppointment.employeeId || !newAppointment.date || !newAppointment.serviceId) {
         setAvailableSlots([])
         return
       }
       try {
-        const slots = await SchedulingApi.getAvailableSlots(newAppointment.employeeId, newAppointment.date)
+        const slots = await SchedulingApi.getAvailableSlots(
+          newAppointment.employeeId, 
+          newAppointment.date, 
+          newAppointment.serviceId
+        )
         setAvailableSlots(slots || [])
       } catch (e) {
         console.error('Falha ao carregar horários disponíveis:', e)
+        setAvailableSlots([])
       }
     })()
-  }, [newAppointment.employeeId, newAppointment.date])
+  }, [newAppointment.employeeId, newAppointment.date, newAppointment.serviceId, appointments])
 
   // Load next five upcoming
   useEffect(() => {
@@ -249,8 +254,15 @@ export default function Scheduling() {
 
   const getServiceDetails = (serviceId) => services.find((s) => String(s.id) === String(serviceId))
 
+  // Função auxiliar para converter horário em minutos (mantida para validações locais se necessário)
+  const timeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number)
+    return hours * 60 + minutes
+  }
+
   const handleAddAppointment = async () => {
     if (!newAppointment.clientName || !newAppointment.employeeId || !newAppointment.serviceId || !newAppointment.date || !newAppointment.time) return
+    
     try {
       const payload = {
         appointment_date: newAppointment.date,
@@ -280,6 +292,24 @@ export default function Scheduling() {
       }))
       setAppointments(mapped)
       setNewAppointment({ clientName: "", clientPhone: "", serviceId: "", employeeId: "", date: "", time: "", notes: "" })
+      
+      // Recarregar slots disponíveis após criar agendamento
+      if (newAppointment.date === `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`) {
+        // Se foi criado na data atualmente selecionada, recarregar slots
+        try {
+          const slots = await SchedulingApi.getAvailableSlots(
+            newAppointment.employeeId,
+            newAppointment.date,
+            newAppointment.serviceId
+          )
+          setAvailableSlots(slots || [])
+        } catch (e) {
+          console.error('Erro ao recarregar slots:', e)
+          setAvailableSlots([])
+        }
+      } else {
+        setAvailableSlots([])
+      }
       
       // Refresh next five as well
       await Promise.all([loadNextFive(), loadUpcoming(true)])
@@ -313,12 +343,20 @@ export default function Scheduling() {
         time: a.appointment_time?.slice(0,5),
         notes: a.notes || ''
       })
-      // Pré-carrega slots disponíveis do funcionário/data atuais
-      if(a.employee_id && a.appointment_date){
+      // Pré-carrega slots disponíveis do funcionário/data/serviço atuais
+      if(a.employee_id && a.appointment_date && a.service_id){
         try {
-          const slots = await SchedulingApi.getAvailableSlots(a.employee_id, a.appointment_date)
+          const slots = await SchedulingApi.getAvailableSlots(
+            a.employee_id, 
+            a.appointment_date.slice(0,10), 
+            a.service_id, 
+            a.id
+          )
           setAvailableSlots(slots || [])
-        }catch{}
+        }catch(e){
+          console.error('Erro ao carregar slots para edição:', e)
+          setAvailableSlots([])
+        }
       }
       setEditModalOpen(true)
     }catch(err){
@@ -552,7 +590,9 @@ export default function Scheduling() {
                 <Select
                   value={newAppointment.serviceId}
                   onValueChange={(value) => {
-                    setNewAppointment({ ...newAppointment, serviceId: value, employeeId: "" })
+                    setNewAppointment({ ...newAppointment, serviceId: value, employeeId: "", time: "" })
+                    // Limpar slots disponíveis para forçar recarga com nova duração
+                    setAvailableSlots([])
                   }}
                 >
                   <SelectTrigger>
@@ -604,7 +644,7 @@ export default function Scheduling() {
                   <Select
                     value={newAppointment.time}
                     onValueChange={(value) => setNewAppointment({ ...newAppointment, time: value })}
-                    disabled={!newAppointment.employeeId || !newAppointment.date}
+                    disabled={!newAppointment.employeeId || !newAppointment.date || !newAppointment.serviceId}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o horário" />
@@ -613,15 +653,17 @@ export default function Scheduling() {
                       {availableSlots.length > 0 ? (
                         availableSlots.map((slot) => (
                           <SelectItem key={slot.id} value={slot.start_time?.slice(0,5)}>
-                            {slot.start_time?.slice(0,5)} - {slot.end_time?.slice(0,5)}
+                            {slot.start_time?.slice(0,5)}
                           </SelectItem>
                         ))
+                      ) : newAppointment.employeeId && newAppointment.date && newAppointment.serviceId ? (
+                        <SelectItem key="no-slots" value="" disabled>
+                          Nenhum horário disponível para este serviço
+                        </SelectItem>
                       ) : (
-                        timeSlots.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))
+                        <SelectItem key="select-first" value="" disabled>
+                          Selecione serviço, funcionário e data primeiro
+                        </SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -897,8 +939,26 @@ export default function Scheduling() {
                 <div>
                   <Label>Serviço</Label>
                   <Select value={editing.serviceId} onValueChange={async (v)=> {
-                    // Ao trocar serviço, resetar employee e slots
-                    setEditing(prev=> ({...prev, serviceId:v, employeeId:'', time:''}))
+                    // Ao trocar serviço, resetar horário e recarregar slots
+                    setEditing(prev=> ({...prev, serviceId:v, time:''}))
+                    
+                    // Se tem funcionário e data, recarregar slots com novo serviço
+                    if (editing.employeeId && editing.date) {
+                      try {
+                        const slots = await SchedulingApi.getAvailableSlots(
+                          editing.employeeId, 
+                          editing.date, 
+                          v, 
+                          editing.id
+                        )
+                        setAvailableSlots(slots || [])
+                      } catch (e) {
+                        console.error('Erro ao recarregar slots:', e)
+                        setAvailableSlots([])
+                      }
+                    } else {
+                      setAvailableSlots([])
+                    }
                   }}>
                     <SelectTrigger>
                       <SelectValue placeholder="Serviço" />
@@ -914,8 +974,23 @@ export default function Scheduling() {
                   <Label>Funcionário</Label>
                   <Select value={editing.employeeId} onValueChange={async (v)=> {
                     setEditing(prev=> ({...prev, employeeId:v, time:''}))
-                    if(editing.date){
-                      try { const slots = await SchedulingApi.getAvailableSlots(v, editing.date); setAvailableSlots(slots||[]) } catch{}
+                    
+                    // Recarregar slots se tem data e serviço
+                    if(editing.date && editing.serviceId){
+                      try { 
+                        const slots = await SchedulingApi.getAvailableSlots(
+                          v, 
+                          editing.date, 
+                          editing.serviceId, 
+                          editing.id
+                        ); 
+                        setAvailableSlots(slots || [])
+                      } catch(e){
+                        console.error('Erro ao recarregar slots:', e)
+                        setAvailableSlots([])
+                      }
+                    } else {
+                      setAvailableSlots([])
                     }
                   }} disabled={!editing.serviceId}>
                     <SelectTrigger>
@@ -938,25 +1013,49 @@ export default function Scheduling() {
                     onChange={async e=> {
                       const val = e.target.value; 
                       setEditing(prev=> ({...prev, date:val, time:''}));
-                      if(editing.employeeId){
+                      
+                      // Recarregar slots se tem funcionário e serviço
+                      if(editing.employeeId && editing.serviceId){
                         try { 
-                          const slots = await SchedulingApi.getAvailableSlots(editing.employeeId, val); 
-                          setAvailableSlots(slots||[]) 
-                        } catch{}
+                          const slots = await SchedulingApi.getAvailableSlots(
+                            editing.employeeId, 
+                            val, 
+                            editing.serviceId, 
+                            editing.id
+                          ); 
+                          setAvailableSlots(slots || [])
+                        } catch(e){
+                          console.error('Erro ao recarregar slots:', e)
+                          setAvailableSlots([])
+                        }
+                      } else {
+                        setAvailableSlots([])
                       }
                     }} 
                   />
                 </div>
                 <div>
                   <Label>Hora</Label>
-                  <Select value={editing.time || ''} onValueChange={(v)=> setEditing(prev=> ({...prev,time:v}))} disabled={!editing.date || !editing.employeeId}>
+                  <Select value={editing.time || ''} onValueChange={(v)=> setEditing(prev=> ({...prev,time:v}))} disabled={!editing.date || !editing.employeeId || !editing.serviceId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Horário" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableSlots.length>0 ? availableSlots.map(slot=> (
-                        <SelectItem key={slot.id} value={slot.start_time?.slice(0,5)}>{slot.start_time?.slice(0,5)} - {slot.end_time?.slice(0,5)}</SelectItem>
-                      )) : timeSlots.map(t=> <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      {availableSlots.length > 0 ? (
+                        availableSlots.map(slot=> (
+                          <SelectItem key={slot.id} value={slot.start_time?.slice(0,5)}>
+                            {slot.start_time?.slice(0,5)}
+                          </SelectItem>
+                        ))
+                      ) : editing?.employeeId && editing?.date && editing?.serviceId ? (
+                        <SelectItem key="no-slots" value="" disabled>
+                          Nenhum horário disponível para este serviço
+                        </SelectItem>
+                      ) : (
+                        <SelectItem key="select-first" value="" disabled>
+                          Complete serviço, funcionário e data primeiro
+                        </SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
