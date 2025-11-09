@@ -258,49 +258,50 @@ export default function ServicesProducts() {
     setShowEditServiceDialog(true);
   }
 
-  // Salvar edição
-  async function handleSaveEditService() {
-    if (
-      !editingService.name ||
-      !editingService.category_id ||
-      !editingService.base_cost ||
-      !editingService.profit_margin
-    ) {
-      setError("Preencha todos os campos obrigatórios!");
-      return;
-    }
-    setLoading(true);
-    try {
-      // Calcula preço recomendado atualizado
-      const recommended_price = await calculateRecommendedPrice(
-        editingService.base_cost,
-        editingService.profit_margin
-      );
-      await axiosWithAuth(`/services/${editingService.id}`, {
-        method: "put",
-        data: {
-          name: editingService.name,
-          category_id: Number(editingService.category_id),
-          base_cost: Number(editingService.base_cost),
-          profit_margin: Number(editingService.profit_margin),
-          recommended_price: Number(recommended_price),
-          duration_minutes: Number(editingService.duration_minutes),
-          description: editingService.description,
-          is_active:
-            editingService.is_active !== undefined
-              ? editingService.is_active
-              : true,
-        },
-      });
-      setShowEditServiceDialog(false);
-      setEditingService(null);
-      fetchServices();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // // Salvar edição
+  // async function handleSaveEditService() {
+  //   if (
+  //     !editingService.name ||
+  //     !editingService.category_id ||
+  //     !editingService.base_cost ||
+  //     !editingService.profit_margin
+  //   ) {
+  //     setError("Preencha todos os campos obrigatórios!");
+  //     return;
+  //   }
+  //   setLoading(true);
+  //   try {
+  //     console.log('Editing service data before save:', editingService);
+  //     // Calcula preço recomendado atualizado
+  //     const recommended_price = await calculateRecommendedPrice(
+  //       editingService.base_cost,
+  //       editingService.profit_margin
+  //     );
+  //     await axiosWithAuth(`/services/${editingService.id}`, {
+  //       method: "put",
+  //       data: {
+  //         name: editingService.name,
+  //         category_id: Number(editingService.category_id),
+  //         base_cost: Number(editingService.base_cost),
+  //         profit_margin: Number(editingService.profit_margin),
+  //         recommended_price: Number(recommended_price),
+  //         duration_minutes: Number(editingService.duration_minutes),
+  //         description: editingService.description,
+  //         is_active:
+  //           editingService.is_active !== undefined
+  //             ? editingService.is_active
+  //             : true,
+  //       },
+  //     });
+  //     setShowEditServiceDialog(false);
+  //     setEditingService(null);
+  //     fetchServices();
+  //   } catch (e) {
+  //     setError(e.message);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }
 
   async function handleAddProduct() {
     setError("");
@@ -401,11 +402,22 @@ export default function ServicesProducts() {
       }
     }
     
+    // Calcula o preço recomendado usando base_cost e profit_margin
+    let recommended_price = "";
+    if (service.base_cost && service.profit_margin) {
+      recommended_price = (
+      Number(service.base_cost) +
+      (Number(service.base_cost) * Number(service.profit_margin) / 100)
+      ).toFixed(2);
+    }
+
     const editData = {
       id: service.id,
       name: service.name || '',
       description: service.description || '',
-      price: service.recommended_price || service.base_cost || '',
+      base_cost: service.base_cost || '',
+      recommended_price: recommended_price,
+      profit_margin: service.profit_margin || '',
       duration: service.duration_minutes || '',
       category_id: categoryId || ''
     };
@@ -416,8 +428,8 @@ export default function ServicesProducts() {
   }
 
   async function handleSaveEditService() {
-    if (!editingService.name || !editingService.category_id || !editingService.price || !editingService.duration) return;
-    
+    if (!editingService.name || !editingService.category_id || !editingService.base_cost || !editingService.profit_margin || !editingService.recommended_price || !editingService.duration) return;
+
     try {
       setLoading(true);
       await axiosWithAuth(`/services/${editingService.id}`, {
@@ -425,8 +437,8 @@ export default function ServicesProducts() {
         data: {
           name: editingService.name,
           description: editingService.description || null,
-          base_cost: parseFloat(editingService.price) || 0,
-          recommended_price: parseFloat(editingService.price) || 0,
+          base_cost: parseFloat(editingService.base_cost) || 0,
+          recommended_price: parseFloat(editingService.recommended_price) || 0,
           duration_minutes: parseInt(editingService.duration) || 0,
           profit_margin: 20, // valor padrão
           category_id: parseInt(editingService.category_id),
@@ -1111,14 +1123,26 @@ export default function ServicesProducts() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="editServicePrice">Preço (R$)</Label>
+              <Label htmlFor="editServicePrice">Preço base (R$)</Label>
               <Input
                 id="editServicePrice"
                 type="number"
                 step="0.01"
-                value={editingService?.price || ""}
+                value={editingService?.base_cost || ""}
                 onChange={(e) =>
-                  setEditingService({ ...editingService, price: e.target.value })
+                  setEditingService({ ...editingService, base_cost: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editServiceProfit">Margem de lucro (%)</Label>
+              <Input
+                id="editServiceProfit"
+                type="number"
+                step="0.01"
+                value={editingService?.profit_margin || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, profit_margin: e.target.value })
                 }
               />
             </div>
