@@ -123,9 +123,14 @@ export const createTables = async () => {
         unit_cost DECIMAL(10,2),
         reference_type VARCHAR(30) NOT NULL,
         reference_id INTEGER,
+        output_type VARCHAR(30),
+        reason TEXT,
         notes TEXT,
+        registered_by INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (product_id) REFERENCES products(id)
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (product_id) REFERENCES products(id),
+        FOREIGN KEY (registered_by) REFERENCES users(id) ON DELETE SET NULL
       );`,
       `CREATE TABLE IF NOT EXISTS sales (
         id SERIAL PRIMARY KEY,
@@ -257,6 +262,30 @@ export const createTables = async () => {
       console.log('Algumas colunas já existiam ou houve erro ao adicionar:', err.message);
     }
 
+    // Adicionar colunas faltantes na tabela stock_movements para saídas de inventário
+    try {
+      await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS output_type VARCHAR(30);`);
+      await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS reason TEXT;`);
+      await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS registered_by INTEGER;`);
+      await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+      
+      // Adicionar foreign key para registered_by se não existir
+      await pool.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'stock_movements_registered_by_fkey'
+          ) THEN
+            ALTER TABLE stock_movements ADD CONSTRAINT stock_movements_registered_by_fkey 
+            FOREIGN KEY (registered_by) REFERENCES users(id) ON DELETE SET NULL;
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
+      console.log('Algumas colunas de stock_movements já existiam ou houve erro ao adicionar:', err.message);
+    }
+
     // Adicionar constraints de chave estrangeira se não existirem
     try {
       await pool.query(`
@@ -324,6 +353,13 @@ export const createTables = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_employees_status ON employees(status);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);`);
+    
+    // Índices para saídas de inventário
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_type ON stock_movements(movement_type);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_output_type ON stock_movements(output_type) WHERE movement_type = 'output';`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_registered_by ON stock_movements(registered_by);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements(created_at DESC);`);
 
     // Inserir categorias padrão de despesas se não existirem
     const defaultCategories = [

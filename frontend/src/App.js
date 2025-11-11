@@ -1,10 +1,11 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
-import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign } from "lucide-react";
+import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import ServicesProducts from "./components/ServicesProducts";
 import Employees from "./components/Employees";
 import Inventory from "./components/Inventory";
+import InventoryOutputs from "./components/InventoryOutputs";
 import Scheduling from "./components/Scheduling";
 import Analytics from "./components/Analytics";
 import Expenses from "./components/Expenses";
@@ -526,6 +527,12 @@ function App() {
 			component: Employees,
 		},
 		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory },
+		{
+			id: "inventory-outputs",
+			name: "Saídas",
+			icon: PackageMinus,
+			component: InventoryOutputs,
+		},
 		{
 			id: "expenses",
 			name: "Despesas",

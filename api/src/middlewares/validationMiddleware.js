@@ -405,11 +405,10 @@ export const validateRestockProduct = [
 	body("quantity")
 		.isInt({ min: 1 })
 		.withMessage("Quantidade deve ser um inteiro positivo"),
-	body("unit_cost")
-		.optional()
-		.isNumeric()
-		.withMessage("Custo unitário deve ser um número"),
-	body("notes").optional().isString().withMessage("Notas devem ser uma string"),
+	body("notes")
+		.optional({ nullable: true, checkFalsy: true })
+		.isString()
+		.withMessage("Notas devem ser uma string"),
 	param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
 	validationMiddleware,
 ];
@@ -555,6 +554,61 @@ export const validateGetAvailableTimeSlots = [
 		.isInt()
 		.withMessage("ID do funcionário deve ser um inteiro"),
 	param("date").isISO8601().withMessage("Data inválida"),
+	validationMiddleware,
+];
+
+// Validações para saídas de inventário
+export const validateCreateOutput = [
+	body("product_id")
+		.isInt()
+		.withMessage("ID do produto deve ser um inteiro"),
+	body("quantity")
+		.isInt({ min: 1 })
+		.withMessage("Quantidade deve ser um inteiro positivo"),
+	body("output_type")
+		.optional()
+		.isString()
+		.isIn(['sale', 'loss', 'damage', 'expired', 'transfer', 'sample', 'other'])
+		.withMessage("Tipo de saída inválido"),
+	body("reason")
+		.optional()
+		.isString()
+		.withMessage("Motivo deve ser uma string"),
+	body("notes")
+		.optional()
+		.isString()
+		.withMessage("Notas devem ser uma string"),
+	validationMiddleware,
+];
+
+export const validateUpdateOutput = [
+	param("id")
+		.isInt()
+		.withMessage("ID da saída deve ser um inteiro"),
+	body("quantity")
+		.optional()
+		.isInt({ min: 1 })
+		.withMessage("Quantidade deve ser um inteiro positivo"),
+	body("output_type")
+		.optional()
+		.isString()
+		.isIn(['sale', 'loss', 'damage', 'expired', 'transfer', 'sample', 'other'])
+		.withMessage("Tipo de saída inválido"),
+	body("reason")
+		.optional()
+		.isString()
+		.withMessage("Motivo deve ser uma string"),
+	body("notes")
+		.optional()
+		.isString()
+		.withMessage("Notas devem ser uma string"),
+	validationMiddleware,
+];
+
+export const validateOutputId = [
+	param("id")
+		.isInt()
+		.withMessage("ID da saída deve ser um inteiro"),
 	validationMiddleware,
 ];
 
