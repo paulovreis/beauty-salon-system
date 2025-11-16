@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
-import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus } from "lucide-react";
+import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus, UserCheck } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import ServicesProducts from "./components/ServicesProducts";
 import Employees from "./components/Employees";
@@ -9,6 +9,7 @@ import InventoryOutputs from "./components/InventoryOutputs";
 import Scheduling from "./components/Scheduling";
 import Analytics from "./components/Analytics";
 import Expenses from "./components/Expenses";
+import Clients from "./components/Clients";
 import "./App.css";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
@@ -525,6 +526,12 @@ function App() {
 			name: "Funcionários",
 			icon: Users,
 			component: Employees,
+		},
+		{
+			id: "clients",
+			name: "Clientes",
+			icon: UserCheck,
+			component: Clients,
 		},
 		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory },
 		{
