@@ -80,10 +80,10 @@ export default function Dashboard() {
     revenue: (revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0),
     profit: ((revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0)) - (Array.isArray(expenses) ? expenses.reduce((acc, e) => acc + Number(e.total || 0), 0) : 0),
     profitMargin: revenue && Array.isArray(expenses) && expenses.length ? Math.round(100 * (((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) - expenses.reduce((acc, e) => acc + Number(e.total || 0), 0)) / ((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) || 1))) : 0,
-    servicesCompleted: stats.totalAppointments || 0,
-    newClients: 0, // Pode ser implementado no backend
-    inventoryValue: 0, // Pode ser implementado no backend
-    lowStockItems: 0 // Pode ser implementado no backend
+    servicesCompleted: stats.monthlyStats?.completedAppointments || 0,
+    newClients: stats.monthlyStats?.newClients || 0,
+    inventoryValue: stats.inventoryStats?.inventoryValue || 0,
+    lowStockItems: stats.inventoryStats?.lowStockItems || 0
   } : {}
 
   return (
@@ -125,14 +125,14 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Valor do estoque (WIP)</CardTitle>
+            <CardTitle className="text-sm font-medium">Valor do Estoque</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">R${monthlyStats.inventoryValue?.toLocaleString() || 0}</div>
             <p className="text-xs text-red-600">
               <AlertTriangle className="inline h-3 w-3 mr-1" />
-              {monthlyStats.lowStockItems || 0} itens com estoque baixo (WIP)
+              {monthlyStats.lowStockItems || 0} itens com estoque baixo
             </p>
           </CardContent>
         </Card>

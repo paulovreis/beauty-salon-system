@@ -3,7 +3,7 @@ class DashboardController {
     const pool = req.pool;
     try {
       // Estatísticas básicas
-      const [clients, employees, services, appointments, products, totalRevenue] = await Promise.all([
+      const [clients, employees, services, appointments, products, totalRevenue, inventoryStats] = await Promise.all([
         pool.query('SELECT COUNT(*) FROM clients'),
         pool.query('SELECT COUNT(*) FROM employees WHERE status = \'active\''),
         pool.query('SELECT COUNT(*) FROM services WHERE is_active = true'),
@@ -14,6 +14,14 @@ class DashboardController {
             COALESCE(SUM(a.price), 0) as appointments_revenue,
             (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE status = 'completed') as sales_revenue
           FROM appointments a WHERE a.status = 'completed'
+        `),
+        pool.query(`
+          SELECT 
+            COALESCE(SUM(p.current_stock * p.cost_price), 0) as inventory_value,
+            COUNT(CASE WHEN p.current_stock <= p.min_stock_level THEN 1 END) as low_stock_items,
+            COUNT(CASE WHEN p.current_stock <= 0 THEN 1 END) as out_of_stock_items
+          FROM products p 
+          WHERE p.is_active = true
         `)
       ]);
 
@@ -37,6 +45,7 @@ class DashboardController {
 
       const totalRevenueData = totalRevenue.rows[0];
       const monthlyData = currentMonth.rows[0];
+      const inventoryData = inventoryStats.rows[0];
 
       res.json({
         totalClients: Number(clients.rows[0].count),
@@ -51,6 +60,11 @@ class DashboardController {
           canceledAppointments: Number(monthlyData.canceled_appointments),
           monthlyRevenue: Number(monthlyData.monthly_revenue),
           newClients: Number(newClients.rows[0].new_clients)
+        },
+        inventoryStats: {
+          inventoryValue: Number(inventoryData.inventory_value),
+          lowStockItems: Number(inventoryData.low_stock_items),
+          outOfStockItems: Number(inventoryData.out_of_stock_items)
         }
       });
     } catch (err) {

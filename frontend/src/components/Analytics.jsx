@@ -397,7 +397,8 @@ export default function Analytics() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            {/* fazer depois */}
+            {/* <Card>
               <CardHeader>
                 <CardTitle>Alertas de Estoque</CardTitle>
               </CardHeader>
@@ -419,7 +420,7 @@ export default function Analytics() {
                   ))}
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </div>
         </TabsContent>
 
