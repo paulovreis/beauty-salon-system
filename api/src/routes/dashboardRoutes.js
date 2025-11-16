@@ -1,4 +1,3 @@
-
 import express from 'express';
 import DashboardController from '../controllers/dashboardController.js';
 import { validadeRefreshToken } from '../middlewares/validationMiddleware.js';
@@ -26,7 +25,7 @@ router.get('/customer-analysis', authenticateJWT, roleMiddleware(['owner', 'mana
 router.get('/service-analysis', authenticateJWT, roleMiddleware(['owner', 'manager', 'employee']), dashboardController.getServiceAnalysis);
 router.get('/employee-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getEmployeeAnalysis);
 router.get('/inventory-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getInventoryAnalysis);
-router.get('/financial-analysis', authenticateJWT, roleMiddleware(['owner']), dashboardController.getFinancialAnalysis);
+router.get('/financial-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getFinancialAnalysis);
 router.get('/predictive-analysis', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getPredictiveAnalysis);
 
 // Rota para relatório completo (para geração de PDF)

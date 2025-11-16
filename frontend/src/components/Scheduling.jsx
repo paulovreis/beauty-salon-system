@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -49,7 +49,7 @@ export default function Scheduling() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [statusMenuOpenId, setStatusMenuOpenId] = useState(null)
-  const statusMenuRef = useState(null)
+  const statusMenuRef = useRef(null)
   const [clientSearch, setClientSearch] = useState('')
   const [clientResults, setClientResults] = useState([])
   const [showClientDropdown, setShowClientDropdown] = useState(false)

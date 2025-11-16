@@ -78,15 +78,16 @@ const EmployeeController = {
 
       const hashedPassword = bcrypt.hashSync(password, 8);
 
-      const { rows } = await db.query(
-        "INSERT INTO employees (name, email, phone, hire_date, base_salary, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        [name, email, phone, hire_date, base_salary, "active"]
+      const { rows: userRows } = await db.query(
+        "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role",
+        [email, hashedPassword, role]
       );
+      const user = userRows[0];
 
-      const { userRows } = await db.query(
-        "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING *",
-        [rows[0].id, email, hashedPassword, role]
-      )
+      const { rows } = await db.query(
+        "INSERT INTO employees (user_id, name, email, phone, hire_date, base_salary, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+        [user.id, name, email, phone, hire_date, base_salary, "active"]
+      );
 
 
       res.status(201).json(rows[0]);

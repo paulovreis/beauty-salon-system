@@ -383,6 +383,9 @@ export const createTables = async () => {
       `, [category.name, category.description, category.icon, category.color]);
     }
 
+    // Criar extensão unaccent se não existir
+    await pool.query(`CREATE EXTENSION IF NOT EXISTS unaccent;`);
+
     console.log('Tabelas, índices e dados iniciais criados (se não existiam).');
   } catch (err) {
     console.error('Erro ao criar tabelas:', err);

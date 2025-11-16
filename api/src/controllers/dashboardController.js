@@ -22,7 +22,7 @@ class DashboardController {
         SELECT 
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
           COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_appointments,
-          COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN status = 'canceled' THEN 1 END) as canceled_appointments,
           COALESCE(SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END), 0) as monthly_revenue
         FROM appointments 
         WHERE DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CURRENT_DATE)
@@ -48,7 +48,7 @@ class DashboardController {
         monthlyStats: {
           completedAppointments: Number(monthlyData.completed_appointments),
           scheduledAppointments: Number(monthlyData.scheduled_appointments),
-          cancelledAppointments: Number(monthlyData.cancelled_appointments),
+          canceledAppointments: Number(monthlyData.canceled_appointments),
           monthlyRevenue: Number(monthlyData.monthly_revenue),
           newClients: Number(newClients.rows[0].new_clients)
         }
@@ -356,11 +356,11 @@ class DashboardController {
       const cancellationRates = await pool.query(`
         SELECT 
           s.name as service,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed,
           COUNT(*) as total,
           ROUND(
-            (COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
+            (COUNT(CASE WHEN a.status = 'canceled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
           ) as cancellation_rate
         FROM services s
         LEFT JOIN appointments a ON s.id = a.service_id
@@ -389,7 +389,7 @@ class DashboardController {
           e.name,
           COUNT(a.*) as total_appointments,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed_appointments,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled_appointments,
           SUM(CASE WHEN a.status = 'completed' THEN a.price ELSE 0 END) as revenue_generated,
           SUM(CASE WHEN a.status = 'completed' THEN a.commission_amount ELSE 0 END) as total_commission,
           AVG(CASE WHEN a.status = 'completed' THEN a.price END) as avg_service_price,
@@ -855,7 +855,7 @@ class DashboardController {
       SELECT 
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
         COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_appointments,
-        COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_appointments,
+        COUNT(CASE WHEN status = 'canceled' THEN 1 END) as canceled_appointments,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END), 0) as monthly_revenue
       FROM appointments 
       WHERE DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CURRENT_DATE)
@@ -880,7 +880,7 @@ class DashboardController {
       monthlyStats: {
         completedAppointments: Number(monthlyData.completed_appointments),
         scheduledAppointments: Number(monthlyData.scheduled_appointments),
-        cancelledAppointments: Number(monthlyData.cancelled_appointments),
+        canceledAppointments: Number(monthlyData.canceled_appointments),
         monthlyRevenue: Number(monthlyData.monthly_revenue),
         newClients: Number(newClients.rows[0].new_clients)
       }
@@ -1036,11 +1036,11 @@ class DashboardController {
       pool.query(`
         SELECT 
           s.name as service,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed,
           COUNT(*) as total,
           ROUND(
-            (COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
+            (COUNT(CASE WHEN a.status = 'canceled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
           ) as cancellation_rate
         FROM services s
         LEFT JOIN appointments a ON s.id = a.service_id
@@ -1065,7 +1065,7 @@ class DashboardController {
           e.name,
           COUNT(a.*) as total_appointments,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed_appointments,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled_appointments,
           SUM(CASE WHEN a.status = 'completed' THEN a.price ELSE 0 END) as revenue_generated,
           SUM(CASE WHEN a.status = 'completed' THEN a.commission_amount ELSE 0 END) as total_commission,
           AVG(CASE WHEN a.status = 'completed' THEN a.price END) as avg_service_price,

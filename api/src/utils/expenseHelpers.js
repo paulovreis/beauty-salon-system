@@ -27,7 +27,7 @@ export const EXPENSE_STATUS = {
   PENDING: 'pending',
   PAID: 'paid',
   OVERDUE: 'overdue',
-  CANCELLED: 'cancelled'
+  CANCELED: 'canceled'
 };
 
 // Helper functions para formatação e validação

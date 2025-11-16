@@ -609,7 +609,8 @@ export default function Inventory() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {inventory.map((item) => {
           const promotion = getPromotionSuggestion(item)
-          const stockPercentage = (item.currentStock / item.maxStock) * 100
+          const max = Number(item.maxStock) || 0;
+          const stockPercentage = max > 0 ? (Number(item.currentStock) / max) * 100 : 0
 
           return (
             <Card key={item.id} className={item.status === "out_of_stock" ? "border-red-200" : ""}>

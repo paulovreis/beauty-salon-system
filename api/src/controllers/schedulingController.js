@@ -292,7 +292,7 @@ class SchedulingController {
 			const [{rows}, countResult] = await Promise.all([dataPromise, countPromise]);
 			const total = parseInt(countResult.rows[0].count,10) || 0;
 			const hasMore = offset + rows.length < total;
-			res.json({data: rows, limit, offset, total, hasMore});
+			res.json({data: rows, limit, offset, total, hasMore: offset + rows.length < total});
 		}catch(err){
 			res.status(500).json({message:'Erro ao buscar agendamentos futuros', error: err.message});
 		}
