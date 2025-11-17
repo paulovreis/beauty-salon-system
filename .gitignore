@@ -19,6 +19,7 @@ Thumbs.db
 # Env files
 .env
 .env.*
+evolution.env
 
 # Build output
 dist/

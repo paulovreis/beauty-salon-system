@@ -1,5 +1,6 @@
 // controllers/schedulingController.js
 import pool from "../db/postgre.js";
+import whatsappService from "../services/whatsappNotificationService.js";
 
 class SchedulingController {
 	constructor() {}
@@ -446,6 +447,15 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações WhatsApp após criar o agendamento
+			try {
+				await whatsappService.sendNewAppointmentNotification(rows[0].id);
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de novo agendamento:', notificationError);
+				// Não falha a criação do agendamento se a notificação falhar
+			}
+			
 			res.status(201).json(rows[0]);
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -571,6 +581,83 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações de alteração de agendamento
+			try {
+				// Verificar se houve mudanças significativas que merecem notificação
+				const oldAppointment = oldRows[0];
+				const newAppointment = rows[0];
+				const changes = [];
+				
+				if (oldAppointment.appointment_date !== newAppointment.appointment_date) {
+					changes.push({
+						field: 'Data',
+						oldValue: new Date(oldAppointment.appointment_date).toLocaleDateString('pt-BR'),
+						newValue: new Date(newAppointment.appointment_date).toLocaleDateString('pt-BR')
+					});
+				}
+				
+				if (oldAppointment.appointment_time !== newAppointment.appointment_time) {
+					changes.push({
+						field: 'Horário',
+						oldValue: oldAppointment.appointment_time,
+						newValue: newAppointment.appointment_time
+					});
+				}
+				
+				if (oldAppointment.status !== newAppointment.status) {
+					changes.push({
+						field: 'Status',
+						oldValue: oldAppointment.status,
+						newValue: newAppointment.status
+					});
+				}
+				
+				// Se houve mudanças significativas, enviar notificação
+				if (changes.length > 0) {
+					// Buscar dados completos para notificação
+					const appointmentDetails = await pool.query(`
+						SELECT 
+							a.*,
+							c.name as client_name,
+							c.phone as client_phone,
+							e.name as employee_name,
+							e.phone as employee_phone,
+							s.name as service_name,
+							s.recommended_price as service_price
+						FROM appointments a
+						JOIN clients c ON c.id = a.client_id
+						JOIN employees e ON e.id = a.employee_id
+						JOIN services s ON s.id = a.service_id
+						WHERE a.id = $1
+					`, [id]);
+					
+					if (appointmentDetails.rows.length > 0) {
+						const appointment = appointmentDetails.rows[0];
+						
+						// Notificar funcionário sobre mudanças
+						if (appointment.employee_phone) {
+							const employeeMessage = whatsappService.createUpdatedAppointmentMessage(
+								{ name: appointment.employee_name },
+								oldAppointment,
+								appointment,
+								changes
+							);
+							await whatsappService.sendMessage(appointment.employee_phone, employeeMessage);
+						}
+						
+						// Notificar cliente sobre mudanças
+						if (appointment.client_phone) {
+							const clientMessage = whatsappService.createClientAppointmentUpdate(appointment, changes);
+							await whatsappService.sendMessage(appointment.client_phone, clientMessage);
+						}
+					}
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de alteração:', notificationError);
+				// Não falha a atualização se a notificação falhar
+			}
+			
 			res.json(rows[0]);
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -586,16 +673,31 @@ class SchedulingController {
 		const { id } = req.params;
 		try {
 			await pool.query('BEGIN');
-			// Busca o agendamento para liberar o slot
-			const { rows: oldRows } = await pool.query(
-				`SELECT employee_id, appointment_date, appointment_time FROM appointments WHERE id = $1`,
-				[id]
-			);
-			if (oldRows.length === 0) {
+			
+			// Buscar dados completos do agendamento antes de deletar para notificações
+			const { rows: appointmentRows } = await pool.query(`
+				SELECT 
+					a.*,
+					c.name as client_name,
+					c.phone as client_phone,
+					e.name as employee_name,
+					e.phone as employee_phone,
+					s.name as service_name,
+					s.recommended_price as service_price
+				FROM appointments a
+				JOIN clients c ON c.id = a.client_id
+				JOIN employees e ON e.id = a.employee_id
+				JOIN services s ON s.id = a.service_id
+				WHERE a.id = $1
+			`, [id]);
+			
+			if (appointmentRows.length === 0) {
 				await pool.query('ROLLBACK');
 				return res.status(404).json({ message: "Agendamento não encontrado" });
 			}
-			const old = oldRows[0];
+			
+			const appointmentData = appointmentRows[0];
+			const old = appointmentRows[0];
 
 			// Deleta o agendamento
 			const { rowCount } = await pool.query(
@@ -614,6 +716,32 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações de cancelamento
+			try {
+				// Notificar funcionário sobre cancelamento
+				if (appointmentData.employee_phone) {
+					const employeeMessage = whatsappService.createCancelledAppointmentMessage(
+						{ name: appointmentData.employee_name },
+						appointmentData,
+						'Agendamento cancelado pelo sistema'
+					);
+					await whatsappService.sendMessage(appointmentData.employee_phone, employeeMessage);
+				}
+				
+				// Notificar cliente sobre cancelamento
+				if (appointmentData.client_phone) {
+					const clientMessage = whatsappService.createClientAppointmentCancellation(
+						appointmentData,
+						'Agendamento cancelado pelo sistema'
+					);
+					await whatsappService.sendMessage(appointmentData.client_phone, clientMessage);
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de cancelamento:', notificationError);
+				// Não falha o cancelamento se a notificação falhar
+			}
+			
 			res.status(204).send();
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -740,6 +868,21 @@ class SchedulingController {
 				await pool.query(`UPDATE clients SET total_visits = GREATEST(total_visits - 1,0), total_spent = GREATEST(total_spent - $2,0) WHERE id = $1`,[appt.client_id, appt.price]);
 			}
 			await pool.query('COMMIT');
+			
+			// Enviar notificações WhatsApp para mudança de status
+			try {
+				if (newStatus === 'confirmed') {
+					await whatsappService.sendAppointmentConfirmationNotification(id);
+				} else if (newStatus === 'completed') {
+					await whatsappService.sendAppointmentCompletionNotification(id);
+				} else if (newStatus === 'canceled') {
+					await whatsappService.sendSimpleCancellationNotification(id, 'Status alterado para cancelado');
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de mudança de status:', notificationError);
+				// Não falha a atualização se a notificação falhar
+			}
+			
 			res.json(updated.rows[0]);
 		}catch(err){
 			await pool.query('ROLLBACK').catch(()=>{});

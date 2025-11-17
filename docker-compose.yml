@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # PostgreSQL para o sistema principal
   db:
     image: postgres:16
     restart: always
@@ -12,7 +13,23 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    networks:
+      - beauty-salon-net
 
+  # Redis para EvolutionAPI
+  redis:
+    image: redis:7-alpine
+    container_name: redis_evolution
+    restart: always
+    command: redis-server --port 6379 --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - beauty-salon-net
+
+  # API do sistema principal
   api:
     build: ./api
     env_file:
@@ -21,7 +38,10 @@ services:
       - "5000:5000"
     depends_on:
       - db
+    networks:
+      - beauty-salon-net
 
+  # Frontend do sistema
   frontend:
     build: ./frontend
     environment:
@@ -30,6 +50,39 @@ services:
       - "3000:3000"
     depends_on:
       - api
+    networks:
+      - beauty-salon-net
+
+  # EvolutionAPI - WhatsApp Business Integration
+  evolution-api:
+    image: evoapicloud/evolution-api:homolog
+    container_name: evolution_api_beauty_salon
+    restart: always
+    ports:
+      - "8080:8080"
+    env_file:
+      - evolution.env
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_data:/app/data
+    depends_on:
+      - redis
+    networks:
+      - beauty-salon-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   db_data:
+  redis_data:
+  evolution_instances:
+  evolution_data:
+
+networks:
+  beauty-salon-net:
+    name: beauty-salon-net
+    driver: bridge

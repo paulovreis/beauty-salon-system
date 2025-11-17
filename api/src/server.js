@@ -12,6 +12,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import schedulingRoutes from './routes/schedulingRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import expenseRoutes from './routes/expenseRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -71,6 +72,11 @@ app.use('/expenses', (req, res, next) => {
   req.pool = pool;
   next();
 }, expenseRoutes);
+
+app.use('/notifications', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, notificationRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,4 +1,5 @@
 import pool from "../db/postgre.js";
+import whatsappService from "../services/whatsappNotificationService.js";
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
@@ -134,7 +135,22 @@ class ClientController {
         [name, email, phone, address, birth_date, notes]
       );
       
-      res.status(201).json(rows[0]);
+      const newClient = rows[0];
+      
+      // Enviar mensagem de boas-vindas via WhatsApp se o cliente tiver telefone
+      if (phone) {
+        try {
+          const welcomeMessage = `🎉 *Bem-vindo(a), ${name}!*\n\nOlá! É um prazer ter você como nosso cliente!\n\nEstamos aqui para cuidar da sua beleza com todo carinho e profissionalismo.\n\n✨ *Nossos serviços incluem:*\n• Cortes e penteados\n• Coloração e mechas\n• Tratamentos capilares\n• Manicure e pedicure\n• E muito mais!\n\n📅 Para agendamentos, entre em contato conosco!\n\n💖 Obrigada por escolher nosso salão!`;
+          
+          await whatsappService.sendMessage(phone, welcomeMessage);
+          console.log(`Mensagem de boas-vindas enviada para ${name} (${phone})`);
+        } catch (whatsappError) {
+          console.error('Erro ao enviar mensagem de boas-vindas:', whatsappError);
+          // Não falha a criação do cliente se a mensagem falhar
+        }
+      }
+      
+      res.status(201).json(newClient);
     } catch (err) {
       res.status(500).json({ message: 'Erro ao criar cliente', error: err.message });
     }

@@ -386,6 +386,22 @@ export const createTables = async () => {
     // Criar extensão unaccent se não existir
     await pool.query(`CREATE EXTENSION IF NOT EXISTS unaccent;`);
 
+    // Criar tabela de configurações de notificações dos funcionários
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS employee_notifications (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        notification_types JSONB DEFAULT '[]',
+        enabled BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(employee_id)
+      )
+    `);
+
+    // Criar índice para configurações de notificações
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_employee_notifications_employee ON employee_notifications(employee_id);`);
+
     console.log('Tabelas, índices e dados iniciais criados (se não existiam).');
   } catch (err) {
     console.error('Erro ao criar tabelas:', err);

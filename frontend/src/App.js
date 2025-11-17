@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
-import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus, UserCheck } from "lucide-react";
+import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus, UserCheck, MessageCircle, Settings } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import ServicesProducts from "./components/ServicesProducts";
 import Employees from "./components/Employees";
@@ -10,6 +10,8 @@ import Scheduling from "./components/Scheduling";
 import Analytics from "./components/Analytics";
 import Expenses from "./components/Expenses";
 import Clients from "./components/Clients";
+import WhatsApp from "./components/WhatsApp";
+import NotificationSettings from "./components/NotificationSettings";
 import "./App.css";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
@@ -532,6 +534,18 @@ function App() {
 			name: "Clientes",
 			icon: UserCheck,
 			component: Clients,
+		},
+		{
+			id: "whatsapp",
+			name: "WhatsApp",
+			icon: MessageCircle,
+			component: WhatsApp,
+		},
+		{
+			id: "notifications",
+			name: "Notificações",
+			icon: Settings,
+			component: NotificationSettings,
 		},
 		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory },
 		{
