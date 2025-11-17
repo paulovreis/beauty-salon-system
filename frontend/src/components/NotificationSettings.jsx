@@ -13,6 +13,8 @@ const NotificationSettings = () => {
   const [alert, setAlert] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [testingNotification, setTestingNotification] = useState(null);
+  const [sendingAnalysis, setSendingAnalysis] = useState(false);
+  const [checkingLowStock, setCheckingLowStock] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -115,6 +117,33 @@ const NotificationSettings = () => {
     }
   };
 
+  const sendDailyAnalysis = async () => {
+    try {
+      setSendingAnalysis(true);
+      await axiosWithAuth('/notifications/daily-analysis', { method: 'POST', data: {} });
+      setAlert({ type: 'success', message: 'Análise diária enviada para gerentes/donos!' });
+    } catch (error) {
+      console.error('Erro ao enviar análise diária:', error);
+      setAlert({ type: 'error', message: error.response?.data?.message || 'Erro ao enviar análise diária' });
+    } finally {
+      setSendingAnalysis(false);
+    }
+  };
+
+  const checkLowStock = async () => {
+    try {
+      setCheckingLowStock(true);
+      const resp = await axiosWithAuth('/notifications/check-low-stock', { method: 'POST', data: {} });
+      const count = resp.data?.data?.count ?? 0;
+      setAlert({ type: 'success', message: `Verificação de estoque baixo concluída (${count} produto(s))` });
+    } catch (error) {
+      console.error('Erro ao verificar estoque baixo:', error);
+      setAlert({ type: 'error', message: error.response?.data?.message || 'Erro na verificação de estoque baixo' });
+    } finally {
+      setCheckingLowStock(false);
+    }
+  };
+
   const toggleNotificationType = (employeeId, notificationType) => {
     const employee = employees.find(emp => emp.employee_id === employeeId);
     const currentTypes = employee.notification_types || [];
@@ -201,9 +230,15 @@ const NotificationSettings = () => {
             Gerencie as configurações de notificação WhatsApp dos funcionários
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={sendDailyNotifications} disabled={loading} variant="outline">
-            📅 Enviar Notificações Diárias
+            {loading ? '⏳' : '📅'} Notificações Diárias
+          </Button>
+          <Button onClick={sendDailyAnalysis} disabled={sendingAnalysis} variant="outline">
+            {sendingAnalysis ? '⏳' : '📊'} Análise Diária
+          </Button>
+          <Button onClick={checkLowStock} disabled={checkingLowStock} variant="outline">
+            {checkingLowStock ? '⏳' : '📦'} Estoque Baixo
           </Button>
           <Button onClick={fetchData} disabled={loading}>
             🔄 Atualizar
@@ -264,6 +299,10 @@ const NotificationSettings = () => {
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {types.map(type => {
+                          // Restringe exibição conforme roles permitidas
+                          if (type.roles && !type.roles.includes(employee.employee_role)) {
+                            return null; // não renderiza tipos não permitidos para o papel
+                          }
                           const isEnabled = (employee.notification_types || []).includes(type.key);
                           return (
                             <div

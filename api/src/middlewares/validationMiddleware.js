@@ -233,7 +233,6 @@ export const validateAddServiceEspecialty = [
 	body("employee_id")
 		.isInt()
 		.withMessage("ID do funcionário deve ser um inteiro"),
-	body("service_id").isInt().withMessage("ID do serviço deve ser um inteiro"),
 	body("commission_rate")
 		.isNumeric()
 		.withMessage("Taxa de comissão deve ser um número"),

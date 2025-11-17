@@ -13,6 +13,7 @@ import schedulingRoutes from './routes/schedulingRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import expenseRoutes from './routes/expenseRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import schedulerService from './services/schedulerService.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -106,6 +107,9 @@ const startServer = async () => {
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+      
+      // Iniciar tarefas agendadas do WhatsApp
+      schedulerService.startScheduledTasks();
     });
   } catch (error) {
     console.error('Error starting server:', error);

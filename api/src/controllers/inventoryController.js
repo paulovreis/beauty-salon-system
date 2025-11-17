@@ -104,6 +104,42 @@ class InventoryController {
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
         [product_id, movement_type, quantity, unit_cost || null, reference_type || null, notes || null]
       );
+
+      // Buscar dados do produto para notificação
+      const productResult = await db.query('SELECT name FROM products WHERE id = $1', [product_id]);
+      const productName = productResult.rows[0]?.name;
+      
+      // Enviar notificação WhatsApp para gerentes/donos sobre movimentação de estoque
+      try {
+        const whatsappService = (await import('../services/whatsappNotificationService.js')).default;
+        const notificationType = movement_type === 'in' ? 'inventory_restock' : 'inventory_output';
+        
+        await whatsappService.sendSystemChangeNotification(
+          notificationType,
+          {
+            product: productName,
+            quantity: quantity,
+            movement_type: movement_type === 'in' ? 'Entrada' : 'Saída',
+            unit_cost: unit_cost ? `R$ ${parseFloat(unit_cost).toFixed(2)}` : 'Não informado',
+            reference_type: reference_type || 'Não informado',
+            notes: notes || 'Sem observações'
+          },
+          `Movimento de Estoque: ${productName}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de movimentação:', notificationError);
+      }
+
+      // Verificar estoque baixo após movimentações de saída
+      if (movement_type === 'out') {
+        try {
+          const ProductController = (await import('./productController.js')).default;
+          await ProductController.checkLowStockAndNotify(db);
+        } catch (lowStockError) {
+          console.error('Erro ao verificar estoque baixo:', lowStockError);
+        }
+      }
+
       res.status(201).json(rows[0]);
     } catch (err) {
       res.status(500).json({ message: 'Erro ao registrar movimentação', error: err.message });

@@ -1,5 +1,7 @@
 import pool from '../db/postgre.js';
 
+import whatsappService from '../services/whatsappNotificationService.js';
+
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
 
@@ -115,6 +117,24 @@ class ExpenseController {
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `, [category, description, amount, expense_date, payment_method, receipt_number || null, notes || null]);
+
+      // Enviar notificação de nova despesa
+      try {
+        await whatsappService.sendSystemChangeNotification(
+          'expense_created',
+          {
+            category,
+            description,
+            amount,
+            expense_date,
+            payment_method,
+            receipt_number
+          },
+          `Despesa: ${description}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de despesa:', notificationError);
+      }
 
       res.status(201).json(rows[0]);
     } catch (err) {

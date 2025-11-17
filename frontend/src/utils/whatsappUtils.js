@@ -15,19 +15,19 @@ export const MESSAGE_TEMPLATES = {
     `Olá ${clientName}! 🎉\n\nSeja bem-vindo(a) ao nosso salão! Estamos muito felizes em tê-lo(a) como cliente.\n\nQualquer dúvida, estaremos aqui para ajudar! 💆‍♀️✨`,
   
   APPOINTMENT_CONFIRMATION: (clientName, service, date, time, employee) =>
-    `Olá ${clientName}! ✅\n\nSeu agendamento foi confirmado:\n\n🗓️ Data: ${date}\n⏰ Horário: ${time}\n💅 Serviço: ${service}\n👩‍💼 Profissional: ${employee}\n\nNos vemos em breve! 😊`,
+    `Olá ${clientName}! ✅\n\nSeu agendamento foi confirmado:\n\n🗓️ Data: ${date}\n⏰ Horário: ${time}\n✂️ Serviço: ${service}\n👩‍💼 Profissional: ${employee}\n\nNos vemos em breve! 😊`,
   
   APPOINTMENT_REMINDER: (clientName, service, date, time) =>
-    `Oi ${clientName}! ⏰\n\nLembrando que você tem agendamento amanhã:\n\n🗓️ Data: ${date}\n⏰ Horário: ${time}\n💅 Serviço: ${service}\n\nTe esperamos! Se precisar reagendar, entre em contato conosco. 📞`,
+    `Oi ${clientName}! ⏰\n\nLembrando que você tem agendamento amanhã:\n\n🗓️ Data: ${date}\n⏰ Horário: ${time}\n✂️ Serviço: ${service}\n\nTe esperamos! Se precisar reagendar, entre em contato conosco. 📞`,
   
   APPOINTMENT_THANKS: (clientName, service) =>
     `Obrigada ${clientName}! 💖\n\nFoi um prazer atendê-la hoje! Esperamos que tenha ficado satisfeita com o(a) ${service}.\n\nNão esqueça de agendar seu próximo horário! 📅✨`,
   
   BIRTHDAY: (clientName) =>
-    `Parabéns ${clientName}! 🎂🎉\n\nHoje é seu dia especial! Que tal comemorar com um cuidado especial?\n\nTemos uma promoção especial para aniversariantes! Entre em contato para saber mais. 💅✨`,
+    `Parabéns ${clientName}! 🎂🎉\n\nHoje é seu dia especial! Que tal comemorar com um cuidado especial?\n\nTemos uma promoção especial para aniversariantes! Entre em contato para saber mais. ✂️ ✨`,
   
   PROMOTION: (clientName, promotion) =>
-    `Oi ${clientName}! 🔥\n\nTemos uma promoção especial para você:\n\n${promotion}\n\nAproveite e agende já seu horário! Vagas limitadas. 📅💅`,
+    `Oi ${clientName}! 🔥\n\nTemos uma promoção especial para você:\n\n${promotion}\n\nAproveite e agende já seu horário! Vagas limitadas. 📅✂️ `,
   
   MISSED_APPOINTMENT: (clientName, date, time) =>
     `Oi ${clientName}! 😊\n\nNotamos que você não pôde comparecer ao agendamento de ${date} às ${time}.\n\nTudo bem! Quando quiser reagendar, estaremos aqui. Nossa agenda está sempre aberta para você! 📅💖`

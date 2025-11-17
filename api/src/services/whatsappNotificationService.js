@@ -149,7 +149,7 @@ class WhatsAppNotificationService {
       
       appointments.forEach((appointment, index) => {
         message += `🕐 *${appointment.appointment_time}* - ${appointment.client_name}\n`;
-        message += `💅 Serviço: ${appointment.service_name}\n`;
+        message += `✂️ Serviço: ${appointment.service_name}\n`;
         message += `💰 Valor: R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
         message += `📱 Tel: ${appointment.client_phone || 'Não informado'}\n`;
         if (appointment.notes) {
@@ -173,7 +173,7 @@ class WhatsAppNotificationService {
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
     message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
     
     if (appointment.notes) {
@@ -192,7 +192,7 @@ class WhatsAppNotificationService {
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
     message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
     
     if (reason) {
@@ -212,7 +212,7 @@ class WhatsAppNotificationService {
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
     message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
     
     message += `\n🎯 Cliente confirmou presença!\n`;
@@ -237,7 +237,7 @@ class WhatsAppNotificationService {
     message += `📅 *Dados atuais:*\n`;
     message += `🗓️ Data: ${new Date(newAppointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
     message += `🕐 Horário: ${newAppointment.appointment_time}\n`;
-    message += `💅 Serviço: ${newAppointment.service_name}\n`;
+    message += `✂️ Serviço: ${newAppointment.service_name}\n`;
     message += `💰 Valor: R$ ${parseFloat(newAppointment.service_price).toFixed(2)}\n`;
     
     message += `\n🔔 Fique atento às mudanças! 👀`;
@@ -249,11 +249,13 @@ class WhatsAppNotificationService {
 
   // Template: Análise do dia
   createDailyAnalysisMessage(analysis) {
+    // Usa timezone de São Paulo para alinhar a data com os relatórios e notificações diárias
     const today = new Date().toLocaleDateString('pt-BR', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'America/Sao_Paulo'
     });
 
     let message = `📊 *RELATÓRIO DIÁRIO - ${today.toUpperCase()}*\n`;
@@ -282,7 +284,7 @@ class WhatsAppNotificationService {
     if (analysis.lowStockItems && analysis.lowStockItems.length > 0) {
       message += `⚠️ *ESTOQUE BAIXO*\n`;
       analysis.lowStockItems.forEach(item => {
-        message += `├ 📦 ${item.name}: ${item.quantity} unidades\n`;
+        message += `├ 📦 ${item.name}: ${item.current_stock} unidades\n`;
       });
       message += `\n`;
     }
@@ -303,7 +305,7 @@ class WhatsAppNotificationService {
     let message = `🔔 *ATUALIZAÇÃO DO SISTEMA*\n\n`;
     
     const icons = {
-      'service': '💅',
+      'service': '✂️ ',
       'product': '🛍️',
       'inventory': '📦',
       'expense': '💸',
@@ -341,7 +343,7 @@ class WhatsAppNotificationService {
       day: 'numeric'
     })}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
     
@@ -380,7 +382,7 @@ class WhatsAppNotificationService {
       day: 'numeric'
     })}\n`;
     message += `🕐 Horário: ${appointment.appointment_time}\n`;
-    message += `💅 Serviço: ${appointment.service_name}\n`;
+    message += `✂️ Serviço: ${appointment.service_name}\n`;
     message += `👨‍💼 Profissional: ${appointment.employee_name}\n`;
     message += `💰 Valor: R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
     
@@ -403,7 +405,7 @@ class WhatsAppNotificationService {
       day: 'numeric'
     })}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
     
     if (reason) {
@@ -423,7 +425,7 @@ class WhatsAppNotificationService {
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
     message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name || 'N/A'}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
     
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
@@ -432,15 +434,18 @@ class WhatsAppNotificationService {
     return message;
   }
 
-  // Método para cancelamento com dados mínimos (usado pela mudança de status)
+  // Método para cancelamento simples (usado quando dados podem estar incompletos)
   async sendSimpleCancellationNotification(appointmentId, reason = 'Status alterado para cancelado') {
     try {
       // Query mais simples para pegar dados básicos
       const basicQuery = `
-        SELECT a.*, c.name as client_name, e.name as employee_name, e.phone as employee_phone
+        SELECT a.*, c.name as client_name, c.phone as client_phone, 
+               e.name as employee_name, e.phone as employee_phone,
+               s.name as service_name
         FROM appointments a
         LEFT JOIN clients c ON a.client_id = c.id
         LEFT JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN services s ON a.service_id = s.id
         WHERE a.id = $1
       `;
       
@@ -449,32 +454,20 @@ class WhatsAppNotificationService {
       
       const appointment = result.rows[0];
       
-      // Notificar funcionário com dados mínimos
+      // Notificar funcionário com dados básicos
       if (appointment.employee_phone) {
         const employeeMessage = this.createSimpleCancellationMessage(appointment, reason);
         await this.sendMessage(appointment.employee_phone, employeeMessage);
       }
+      
+      // Notificar cliente também
+      if (appointment.client_phone) {
+        const clientMessage = this.createClientSimpleCancellation(appointment, reason);
+        await this.sendMessage(appointment.client_phone, clientMessage);
+      }
     } catch (error) {
       console.error('Erro ao enviar notificação simples de cancelamento:', error);
     }
-    
-    message += `📋 *DETALHES DO AGENDAMENTO CANCELADO:*\n`;
-    message += `═══════════════════════════════════\n`;
-    message += `📅 Data: ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
-    message += `🕐 Horário: ${appointment.appointment_time}\n`;
-    message += `💅 Serviço: ${appointment.service_name}\n`;
-    message += `👨‍💼 Profissional: ${appointment.employee_name}\n`;
-    
-    if (reason) {
-      message += `\n📝 *Motivo:* ${reason}\n`;
-    }
-    
-    message += `\n🤝 *Queremos reagendar com você!*\n`;
-    message += `📱 Entre em contato conosco para escolher um novo horário.\n`;
-    message += `✨ Estamos ansiosos para atendê-la em breve!\n\n`;
-    message += `💖 Desculpe pelo transtorno e obrigada pela compreensão!`;
-    
-    return message;
   }
 
   // MÉTODOS PARA BUSCAR DADOS DO BANCO
@@ -641,7 +634,7 @@ class WhatsAppNotificationService {
       if (result.rows.length === 0) {
         // Retornar configuração padrão se não existir
         return {
-          notification_types: ['daily_schedule', 'appointment_changes', 'new_appointments', 'cancellations'],
+          notification_types: ['daily_schedule', 'new_appointments', 'appointment_changes', 'cancellations'],
           enabled: true
         };
       }
@@ -708,8 +701,9 @@ class WhatsAppNotificationService {
       if (!targetEmployees) {
         // Buscar todos os funcionários ativos se não especificado
         const result = await pool.query(`
-          SELECT e.id, e.name, e.phone, e.role
+          SELECT e.id, e.name, e.phone, COALESCE(u.role,'employee') AS role
           FROM employees e
+          LEFT JOIN users u ON u.id = e.user_id
           WHERE e.status = 'active' AND e.phone IS NOT NULL
         `);
         targetEmployees = result.rows;
@@ -974,7 +968,7 @@ Volte sempre! 😊✨`;
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
     message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
-    message += `💅 *Serviço:* ${appointment.service_name || 'N/A'}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
     
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
@@ -996,7 +990,7 @@ Volte sempre! 😊✨`;
       day: 'numeric'
     }) : 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;  
-    message += `💅 *Serviço:* ${appointment.service_name || 'N/A'}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     
     if (reason) {
       message += `📝 *Motivo:* ${reason}\n`;
@@ -1009,7 +1003,462 @@ Volte sempre! 😊✨`;
     return message;
   }
 
-  // Outros métodos de notificação serão implementados de forma similar...
+  // ========================================
+  // NOTIFICAÇÕES AVANÇADAS PARA GERENTES E DONOS
+  // ========================================
+
+  // Enviar análise diária completa
+  async sendDailyAnalysisNotification() {
+    try {
+      // Buscar gerentes e donos
+      const managersQuery = `
+        SELECT e.id, e.name, e.phone
+        FROM employees e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.status = 'active' 
+        AND COALESCE(u.role,'employee') IN ('owner', 'manager')
+        AND e.phone IS NOT NULL 
+        AND e.phone != ''
+      `;
+      
+      const managersResult = await pool.query(managersQuery);
+      const managers = managersResult.rows;
+
+      if (managers.length === 0) {
+        console.log('Nenhum gerente/dono encontrado para análise diária');
+        return;
+      }
+
+      // Gerar análise completa do dia
+      const analysis = await this.generateDailyAnalysis();
+      const message = this.createDailyAnalysisMessage(analysis);
+
+      for (const manager of managers) {
+        try {
+          await this.sendMessage(manager.phone, message);
+          console.log(`Análise diária enviada para ${manager.name}`);
+        } catch (error) {
+          console.error(`Erro ao enviar análise para ${manager.name}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao enviar análise diária:', error);
+    }
+  }
+
+  // Gerar dados da análise diária
+  async generateDailyAnalysis() {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    
+    try {
+      // Agendamentos do dia
+      const appointmentsQuery = `
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+          COUNT(CASE WHEN status = 'canceled' THEN 1 END) as canceled,
+          COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as pending,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN price END), 0) as revenue
+        FROM appointments 
+        WHERE appointment_date = $1
+      `;
+      
+      const appointmentsResult = await pool.query(appointmentsQuery, [today]);
+      const appointmentStats = appointmentsResult.rows[0];
+
+      // Despesas do dia
+      const expensesQuery = `
+        SELECT COALESCE(SUM(amount), 0) as total_expenses
+        FROM expenses 
+        WHERE expense_date = $1
+      `;
+      
+      const expensesResult = await pool.query(expensesQuery, [today]);
+      const totalExpenses = parseFloat(expensesResult.rows[0].total_expenses);
+
+      // Clientes novos e recorrentes
+      const clientsQuery = `
+        SELECT 
+          COUNT(DISTINCT c.id) as total_clients,
+          COUNT(DISTINCT CASE WHEN c.created_at::date = $1 THEN c.id END) as new_clients
+        FROM appointments a
+        JOIN clients c ON a.client_id = c.id
+        WHERE a.appointment_date = $1 AND a.status != 'canceled'
+      `;
+      
+      const clientsResult = await pool.query(clientsQuery, [today]);
+      const clientStats = clientsResult.rows[0];
+
+      // Funcionários performance
+      const employeeStatsQuery = `
+        SELECT 
+          e.name,
+          COUNT(a.id) as appointments,
+          COALESCE(SUM(CASE WHEN a.status = 'completed' THEN a.price END), 0) as revenue
+        FROM employees e
+        LEFT JOIN appointments a ON e.id = a.employee_id AND a.appointment_date = $1
+        WHERE e.status = 'active'
+        GROUP BY e.id, e.name
+        ORDER BY appointments DESC
+      `;
+      
+      const employeeStatsResult = await pool.query(employeeStatsQuery, [today]);
+
+      // Produtos com estoque baixo
+      const lowStockQuery = `
+        SELECT name, current_stock, min_stock_level
+        FROM products 
+        WHERE current_stock <= min_stock_level AND is_active = true
+        ORDER BY (current_stock - min_stock_level) ASC
+        LIMIT 5
+      `;
+      
+      const lowStockResult = await pool.query(lowStockQuery);
+
+      const revenue = parseFloat(appointmentStats.revenue);
+      const completionRate = appointmentStats.total > 0 
+        ? Math.round((appointmentStats.completed / appointmentStats.total) * 100) 
+        : 0;
+
+      return {
+        revenue: revenue,
+        expenses: totalExpenses,
+        completedAppointments: parseInt(appointmentStats.completed),
+        cancelledAppointments: parseInt(appointmentStats.canceled),
+        pendingAppointments: parseInt(appointmentStats.pending),
+        completionRate: completionRate,
+        totalClientsServed: parseInt(clientStats.total_clients),
+        newClients: parseInt(clientStats.new_clients),
+        returningClients: parseInt(clientStats.total_clients) - parseInt(clientStats.new_clients),
+        employeeStats: employeeStatsResult.rows,
+        lowStockItems: lowStockResult.rows
+      };
+    } catch (error) {
+      console.error('Erro ao gerar análise diária:', error);
+      return {
+        revenue: 0,
+        expenses: 0,
+        completedAppointments: 0,
+        cancelledAppointments: 0,
+        pendingAppointments: 0,
+        completionRate: 0,
+        totalClientsServed: 0,
+        newClients: 0,
+        returningClients: 0,
+        employeeStats: [],
+        lowStockItems: []
+      };
+    }
+  }
+
+  // Notificar sobre alterações no sistema (produtos, serviços, estoque, etc.)
+  async sendSystemChangeNotification(changeType, details, affectedEntity) {
+    try {
+      // Buscar gerentes e donos que devem receber notificações do sistema
+      const managersQuery = `
+        SELECT e.id, e.name, e.phone
+        FROM employees e
+        LEFT JOIN users u ON u.id = e.user_id
+        LEFT JOIN employee_notifications en ON e.id = en.employee_id
+        WHERE e.status = 'active' 
+        AND COALESCE(u.role,'employee') IN ('owner', 'manager')
+        AND e.phone IS NOT NULL 
+        AND e.phone != ''
+        AND COALESCE(en.enabled, true) = true
+        AND (
+          en.notification_types IS NULL 
+          OR en.notification_types @> '["system_changes"]'::jsonb
+        )
+      `;
+      
+      const managersResult = await pool.query(managersQuery);
+      const managers = managersResult.rows;
+
+      if (managers.length === 0) {
+        console.log('Nenhum gerente/dono configurado para receber notificações do sistema');
+        return;
+      }
+
+      const message = this.createSystemChangeMessage(changeType, details, affectedEntity);
+
+      for (const manager of managers) {
+        try {
+          await this.sendMessage(manager.phone, message);
+          console.log(`Notificação de alteração no sistema enviada para ${manager.name}`);
+        } catch (error) {
+          console.error(`Erro ao enviar notificação do sistema para ${manager.name}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao enviar notificação de alteração no sistema:', error);
+    }
+  }
+
+  // Template para alterações no sistema
+  createSystemChangeMessage(changeType, details, affectedEntity) {
+    const timestamp = new Date().toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo'
+    });
+
+    const icons = {
+      'product_created': '🆕📦',
+      'product_updated': '✏️📦',
+      'product_deleted': '🗑️📦',
+      'service_created': '🆕✂️ ',
+      'service_updated': '✏️✂️ ',
+      'service_deleted': '🗑️✂️ ',
+      'inventory_restock': '📈📦',
+      'inventory_output': '📉📦',
+      'low_stock_alert': '⚠️📦',
+      'expense_created': '🆕💸',
+      'expense_updated': '✏️💸',
+      'employee_created': '🆕👨‍💼',
+      'employee_updated': '✏️👨‍💼',
+      'client_created': '🆕👤',
+      'client_updated': '✏️👤'
+    };
+
+    const titles = {
+      'product_created': 'NOVO PRODUTO CADASTRADO',
+      'product_updated': 'PRODUTO ATUALIZADO',
+      'product_deleted': 'PRODUTO REMOVIDO',
+      'service_created': 'NOVO SERVIÇO CADASTRADO',
+      'service_updated': 'SERVIÇO ATUALIZADO',
+      'service_deleted': 'SERVIÇO REMOVIDO',
+      'inventory_restock': 'ESTOQUE REPOSTO',
+      'inventory_output': 'SAÍDA DE ESTOQUE',
+      'low_stock_alert': 'ESTOQUE BAIXO',
+      'expense_created': 'NOVA DESPESA REGISTRADA',
+      'expense_updated': 'DESPESA ATUALIZADA',
+      'employee_created': 'NOVO FUNCIONÁRIO',
+      'employee_updated': 'FUNCIONÁRIO ATUALIZADO',
+      'client_created': 'NOVO CLIENTE',
+      'client_updated': 'CLIENTE ATUALIZADO'
+    };
+
+    let message = `${icons[changeType] || '🔔'} *${titles[changeType] || 'ALTERAÇÃO NO SISTEMA'}*\n\n`;
+    
+    if (affectedEntity) {
+      message += `📋 *${affectedEntity}*\n`;
+      message += `═══════════════════════\n`;
+    }
+    
+    Object.keys(details).forEach(key => {
+      if (details[key] !== null && details[key] !== undefined) {
+        const label = this.formatFieldLabel(key);
+        const value = this.formatFieldValue(key, details[key]);
+        message += `▫️ *${label}:* ${value}\n`;
+      }
+    });
+    
+    message += `\n⏰ *${timestamp}*\n`;
+    message += `🔄 Sistema atualizado automaticamente.`;
+    
+    return message;
+  }
+
+  // Formatação de labels de campos
+  formatFieldLabel(key) {
+    const labels = {
+      'name': 'Nome',
+      'description': 'Descrição',
+      'price': 'Preço',
+      'cost': 'Custo',
+      'quantity': 'Quantidade',
+      'min_stock': 'Estoque Mínimo',
+      'category': 'Categoria',
+      'duration_minutes': 'Duração',
+      'amount': 'Valor',
+      'expense_date': 'Data',
+      'payment_method': 'Forma de Pagamento',
+      'status': 'Status',
+      'phone': 'Telefone',
+      'email': 'E-mail',
+      'role': 'Função',
+      'hire_date': 'Data de Contratação',
+      'reason': 'Motivo',
+      'notes': 'Observações'
+    };
+    
+    return labels[key] || key.charAt(0).toUpperCase() + key.slice(1);
+  }
+
+  // Formatação de valores de campos
+  formatFieldValue(key, value) {
+    if (key.includes('price') || key.includes('cost') || key.includes('amount')) {
+      return `R$ ${parseFloat(value).toFixed(2)}`;
+    }
+    
+    if (key.includes('date')) {
+      return new Date(value).toLocaleDateString('pt-BR');
+    }
+    
+    if (key === 'duration_minutes') {
+      return `${value} min`;
+    }
+    
+    return value;
+  }
+
+  // Notificação de estoque baixo
+  async sendLowStockNotification(products) {
+    try {
+      const managersQuery = `
+        SELECT e.id, e.name, e.phone
+        FROM employees e
+        LEFT JOIN users u ON u.id = e.user_id
+        LEFT JOIN employee_notifications en ON e.id = en.employee_id
+        WHERE e.status = 'active' 
+        AND COALESCE(u.role,'employee') IN ('owner', 'manager')
+        AND e.phone IS NOT NULL 
+        AND COALESCE(en.enabled, true) = true
+        AND (
+          en.notification_types IS NULL 
+          OR en.notification_types @> '["low_stock"]'::jsonb
+        )
+      `;
+      
+      const managersResult = await pool.query(managersQuery);
+      const managers = managersResult.rows;
+
+      if (managers.length === 0 || products.length === 0) return;
+
+      const message = this.createLowStockMessage(products);
+
+      for (const manager of managers) {
+        try {
+          await this.sendMessage(manager.phone, message);
+          console.log(`Alerta de estoque baixo enviado para ${manager.name}`);
+        } catch (error) {
+          console.error(`Erro ao enviar alerta de estoque para ${manager.name}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao enviar notificação de estoque baixo:', error);
+    }
+  }
+
+  // Template para estoque baixo
+  createLowStockMessage(products) {
+    let message = `⚠️ *ALERTA DE ESTOQUE BAIXO*\n\n`;
+    message += `📦 *${products.length} produto(s) com estoque baixo:*\n`;
+    message += `═══════════════════════════════\n\n`;
+
+    products.forEach((product, index) => {
+      message += `${index + 1}. *${product.name}*\n`;
+      message += `   📊 Atual: ${product.current_stock} unidades\n`;
+      message += `   ⚠️ Mínimo: ${product.min_stock_level} unidades\n`;
+      message += `   🔢 Diferença: ${product.current_stock - product.min_stock_level}\n\n`;
+    });
+
+    message += `🛒 *Ação necessária: Reposição de estoque*\n`;
+    message += `⏰ ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+
+    return message;
+  }
+
+  // ========================================
+  // TEMPLATES APRIMORADOS PARA CLIENTES
+  // ========================================
+
+  // Template aprimorado para confirmação de agendamento do cliente
+  createEnhancedClientConfirmation(appointment) {
+    const appointmentDate = new Date(appointment.appointment_date);
+    const [year, month, day] = appointment.appointment_date.split('-');
+    const formattedDate = new Date(year, month - 1, day);
+    
+    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    
+    const weekday = weekdays[formattedDate.getDay()];
+    const dayNum = parseInt(day);
+    const monthName = months[parseInt(month) - 1];
+    const yearNum = parseInt(year);
+    
+    const dateString = `${weekday}, ${dayNum} de ${monthName} de ${yearNum}`;
+
+    let message = `✨ *AGENDAMENTO CONFIRMADO* ✨\n\n`;
+    message += `💖 Olá, ${appointment.client_name}!\n`;
+    message += `Seu agendamento foi realizado com sucesso!\n\n`;
+    
+    message += `📋 *DETALHES DO SEU AGENDAMENTO:*\n`;
+    message += `═══════════════════════════════\n`;
+    message += `📅 *Data:* ${dateString}\n`;
+    message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
+    message += `✂️ *Serviço:* ${appointment.service_name}\n`;
+    message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
+    message += `💰 *Investimento:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
+    
+    if (appointment.notes) {
+      message += `📝 *Observações:* ${appointment.notes}\n`;
+    }
+    
+    message += `\n🏪 *${process.env.NOME_SALAO || 'Nosso Salão de Beleza'}*\n`;
+    message += `📱 Precisa reagendar? Entre em contato conosco!\n\n`;
+    message += `🌟 *Estamos ansiosos para cuidar de você!*\n`;
+    message += `💖 Obrigada pela confiança e preferência!\n\n`;
+    message += `✨ *Prepare-se para ficar ainda mais linda!* ✨`;
+    
+    return message;
+  }
+
+  // Lembrete de agendamento (1 dia antes)
+  async sendAppointmentReminder(appointmentId) {
+    try {
+      const appointmentQuery = `
+        SELECT a.*, c.name as client_name, c.phone as client_phone,
+               s.name as service_name, a.price as service_price,
+               e.name as employee_name
+        FROM appointments a
+        JOIN clients c ON a.client_id = c.id
+        JOIN services s ON a.service_id = s.id
+        JOIN employees e ON a.employee_id = e.id
+        WHERE a.id = $1 AND a.status = 'scheduled'
+      `;
+      
+      const result = await pool.query(appointmentQuery, [appointmentId]);
+      if (result.rows.length === 0) return;
+      
+      const appointment = result.rows[0];
+      
+      if (appointment.client_phone) {
+        const message = this.createAppointmentReminderMessage(appointment);
+        await this.sendMessage(appointment.client_phone, message);
+        console.log(`Lembrete enviado para ${appointment.client_name}`);
+      }
+    } catch (error) {
+      console.error('Erro ao enviar lembrete de agendamento:', error);
+    }
+  }
+
+  // Template para lembrete de agendamento
+  createAppointmentReminderMessage(appointment) {
+    const [year, month, day] = appointment.appointment_date.split('-');
+    const formattedDate = new Date(year, month - 1, day);
+    
+    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    const weekday = weekdays[formattedDate.getDay()];
+
+    let message = `🔔 *LEMBRETE DE AGENDAMENTO*\n\n`;
+    message += `💖 Olá, ${appointment.client_name}!\n\n`;
+    message += `✨ Este é um lembrete carinhoso do seu agendamento de amanhã:\n\n`;
+    
+    message += `📅 *${weekday}* - ${formattedDate.toLocaleDateString('pt-BR')}\n`;
+    message += `🕐 *${appointment.appointment_time}*\n`;
+    message += `✂️ *${appointment.service_name}*\n`;
+    message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n\n`;
+    
+    message += `🏪 *${process.env.NOME_SALAO || 'Nosso Salão'}*\n\n`;
+    message += `💡 *Dicas para amanhã:*\n`;
+    message += `• Chegue com 10 minutos de antecedência\n`;
+    message += `• Traga uma referência se desejar algo específico\n`;
+    message += `• Qualquer dúvida, entre em contato conosco!\n\n`;
+    
+    message += `😊 *Mal podemos esperar para cuidar de você!*\n`;
+    message += `✨ Até amanhã! ✨`;
+    
+    return message;
+  }
 }
 
 export default new WhatsAppNotificationService();

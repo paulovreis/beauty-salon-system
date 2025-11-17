@@ -89,6 +89,23 @@ const EmployeeController = {
         [user.id, name, email, phone, hire_date, base_salary, "active"]
       );
 
+      // Enviar notificação WhatsApp para gerentes/donos
+      try {
+        const whatsappService = (await import('../services/whatsappNotificationService.js')).default;
+        await whatsappService.sendSystemChangeNotification(
+          'employee_created',
+          {
+            name: name,
+            email: email,
+            phone: phone || 'Não informado',
+            role: role,
+            hire_date: hire_date || 'Não informada'
+          },
+          `Funcionário: ${name}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de novo funcionário:', notificationError);
+      }
 
       res.status(201).json(rows[0]);
     } catch (err) {
@@ -102,11 +119,40 @@ const EmployeeController = {
     const { id } = req.params;
     const { name, email, phone, hire_date, base_salary, status } = req.body;
     try {
+      // Buscar dados atuais para comparação
+      const currentResult = await db.query('SELECT * FROM employees WHERE id = $1', [id]);
+      const currentEmployee = currentResult.rows[0];
+      
+      if (!currentEmployee) {
+        return res.status(404).json({ message: "Funcionário não encontrado" });
+      }
+
       const { rows } = await db.query(
         "UPDATE employees SET name=$1, email=$2, phone=$3, hire_date=$4, base_salary=$5, status=$6, updated_at=NOW() WHERE id=$7 RETURNING *",
         [name, email, phone, hire_date, base_salary, status, id]
       );
-      if (!rows[0]) return res.status(404).json({ message: "Funcionário não encontrado" });
+      
+      // Enviar notificação WhatsApp para gerentes/donos sobre alterações
+      try {
+        const whatsappService = (await import('../services/whatsappNotificationService.js')).default;
+        const changes = {};
+        if (name && name !== currentEmployee.name) changes.name = name;
+        if (email && email !== currentEmployee.email) changes.email = email;
+        if (phone && phone !== currentEmployee.phone) changes.phone = phone;
+        if (base_salary && base_salary !== currentEmployee.base_salary) changes.base_salary = base_salary;
+        if (status && status !== currentEmployee.status) changes.status = status;
+        
+        if (Object.keys(changes).length > 0) {
+          await whatsappService.sendSystemChangeNotification(
+            'employee_updated',
+            changes,
+            `Funcionário: ${rows[0].name}`
+          );
+        }
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de atualização de funcionário:', notificationError);
+      }
+      
       res.json(rows[0]);
     } catch (err) {
       console.log("Erro ao atualizar funcionário:", err);

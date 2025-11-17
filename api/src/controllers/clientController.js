@@ -150,6 +150,22 @@ class ClientController {
         }
       }
       
+      // Notificar gerentes/donos sobre novo cliente
+      try {
+        await whatsappService.sendSystemChangeNotification(
+          'client_created',
+          {
+            name: name,
+            phone: phone || 'Não informado',
+            email: email || 'Não informado',
+            address: address || 'Não informado'
+          },
+          `Novo Cliente: ${name}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de novo cliente:', notificationError);
+      }
+      
       res.status(201).json(newClient);
     } catch (err) {
       res.status(500).json({ message: 'Erro ao criar cliente', error: err.message });
@@ -164,6 +180,14 @@ class ClientController {
     if (!name) return res.status(400).json({ message: 'Nome é obrigatório' });
     
     try {
+      // Buscar dados atuais para comparação
+      const currentResult = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
+      const currentClient = currentResult.rows[0];
+      
+      if (!currentClient) {
+        return res.status(404).json({ message: 'Cliente não encontrado' });
+      }
+
       // Verifica se existe outro cliente com o mesmo telefone ou email
       const existing = await db.query(
         `SELECT id FROM clients WHERE (phone = $1 OR (email IS NOT NULL AND email = $2)) AND id != $3 LIMIT 1`, 
@@ -182,8 +206,23 @@ class ClientController {
         [name, email, phone, address, birth_date, notes, id]
       );
       
-      if (rows.length === 0) {
-        return res.status(404).json({ message: 'Cliente não encontrado' });
+      // Notificar gerentes/donos sobre atualização do cliente
+      try {
+        const changes = {};
+        if (name && name !== currentClient.name) changes.name = name;
+        if (email && email !== currentClient.email) changes.email = email;
+        if (phone && phone !== currentClient.phone) changes.phone = phone;
+        if (address && address !== currentClient.address) changes.address = address;
+        
+        if (Object.keys(changes).length > 0) {
+          await whatsappService.sendSystemChangeNotification(
+            'client_updated',
+            changes,
+            `Cliente: ${rows[0].name}`
+          );
+        }
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de atualização de cliente:', notificationError);
       }
       
       res.json(rows[0]);
