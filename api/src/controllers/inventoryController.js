@@ -99,10 +99,12 @@ class InventoryController {
     const { product_id, movement_type, quantity, unit_cost, reference_type, notes } = req.body;
     const db = getPool(req);
     try {
+      const refType = reference_type || 'manual'; // garante NOT NULL conforme schema
+      const registeredBy = req.user?.id || null; // captura usuário executor se houver
       const { rows } = await db.query(
-        `INSERT INTO public.stock_movements (product_id, movement_type, quantity, unit_cost, reference_type, notes)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [product_id, movement_type, quantity, unit_cost || null, reference_type || null, notes || null]
+        `INSERT INTO public.stock_movements (product_id, movement_type, quantity, unit_cost, reference_type, notes, registered_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [product_id, movement_type, quantity, unit_cost || null, refType, notes || null, registeredBy]
       );
 
       // Buscar dados do produto para notificação

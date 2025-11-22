@@ -41,6 +41,19 @@ services:
     networks:
       - beauty-salon-net
 
+  # Banco dedicado para testes (isola dados dos testes)
+  db-test:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: beauty_salon
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - db_test_data:/var/lib/postgresql/data
+    networks:
+      - beauty-salon-net
+
   # Frontend do sistema
   frontend:
     build: ./frontend
@@ -48,6 +61,38 @@ services:
       REACT_APP_API_URL: http://localhost:5000
     ports:
       - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - beauty-salon-net
+
+  # Testes de API (rodam automaticamente no up)
+  api-tests:
+    build: ./api
+    environment:
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_HOST: db-test
+      DB_PORT: 5432
+      DB_NAME: beauty_salon
+      JWT_SECRET: supersecretkey
+      INIT_DB: "true"
+      CORS_ORIGIN: http://localhost:3000
+      PORT: 5000
+      TEST_API_URL: http://localhost:5000
+    depends_on:
+      - db-test
+    command: sh -c "npm run init-db && node src/server.js & sleep 6 && npm run test:ci"
+    networks:
+      - beauty-salon-net
+
+  # Testes do Frontend (executados no up)
+  frontend-tests:
+    build: ./frontend
+    environment:
+      CI: "true"
+      REACT_APP_API_URL: http://api:5000
+    command: sh -c "export NODE_OPTIONS=--experimental-vm-modules; npm test --watchAll=false --passWithNoTests"
     depends_on:
       - api
     networks:
@@ -78,6 +123,7 @@ services:
 
 volumes:
   db_data:
+  db_test_data:
   redis_data:
   evolution_instances:
   evolution_data:

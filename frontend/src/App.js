@@ -504,69 +504,31 @@ function App() {
 		}
 	}, []);
 
+	// Definição das abas com papéis permitidos.
+	// Se "allowedRoles" for omitido, considera acesso de todos os papéis.
 	const navigation = [
-		{
-			id: "dashboard",
-			name: "Dashboard",
-			icon: BarChart3,
-			component: Dashboard,
-		},
-		{
-			id: "analytics",
-			name: "Analytics",
-			icon: TrendingUp,
-			component: Analytics,
-		},
-		{
-			id: "services",
-			name: "Serviços",
-			icon: Scissors,
-			component: ServicesProducts,
-		},
-		{
-			id: "employees",
-			name: "Funcionários",
-			icon: Users,
-			component: Employees,
-		},
-		{
-			id: "clients",
-			name: "Clientes",
-			icon: UserCheck,
-			component: Clients,
-		},
-		{
-			id: "whatsapp",
-			name: "WhatsApp",
-			icon: MessageCircle,
-			component: WhatsApp,
-		},
-		{
-			id: "notifications",
-			name: "Notificações",
-			icon: Settings,
-			component: NotificationSettings,
-		},
-		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory },
-		{
-			id: "inventory-outputs",
-			name: "Saídas",
-			icon: PackageMinus,
-			component: InventoryOutputs,
-		},
-		{
-			id: "expenses",
-			name: "Despesas",
-			icon: DollarSign,
-			component: Expenses,
-		},
-		{
-			id: "scheduling",
-			name: "Agendamentos",
-			icon: Calendar,
-			component: Scheduling,
-		},
+		{ id: "dashboard", name: "Dashboard", icon: BarChart3, component: Dashboard, allowedRoles: ["owner", "manager"] },
+		{ id: "analytics", name: "Analytics", icon: TrendingUp, component: Analytics, allowedRoles: ["owner", "manager"] },
+		{ id: "services", name: "Serviços", icon: Scissors, component: ServicesProducts, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "employees", name: "Funcionários", icon: Users, component: Employees, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "clients", name: "Clientes", icon: UserCheck, component: Clients, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "whatsapp", name: "WhatsApp", icon: MessageCircle, component: WhatsApp, allowedRoles: ["owner", "manager"] },
+		{ id: "notifications", name: "Notificações", icon: Settings, component: NotificationSettings, allowedRoles: ["owner", "manager"] },
+		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "inventory-outputs", name: "Saídas", icon: PackageMinus, component: InventoryOutputs, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "expenses", name: "Despesas", icon: DollarSign, component: Expenses, allowedRoles: ["owner", "manager"] },
+		{ id: "scheduling", name: "Agendamentos", icon: Calendar, component: Scheduling, allowedRoles: ["owner", "manager", "employee"] },
 	];
+
+	// Garante aba ativa permitida para o papel atual.
+	useEffect(() => {
+		if (user) {
+			const allowed = navigation.filter(n => !n.allowedRoles || n.allowedRoles.includes(user.role));
+			if (!allowed.find(n => n.id === activeTab)) {
+				setActiveTab(allowed[0]?.id || "dashboard");
+			}
+		}
+	}, [user, activeTab]);
 
 	const handleLogin = (userData) => {
 		setIsAuthenticated(true);
@@ -582,6 +544,19 @@ function App() {
 	// Exemplo de uso automático do refreshToken ao montar o app
 	useEffect(() => {
 		if (isAuthenticated) {
+			// Tenta decodificar o token para obter o papel imediatamente após recarregar a página
+			const token = localStorage.getItem("token");
+			if (!user && token) {
+				try {
+					const [, payload] = token.split(".");
+					const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+					if (json && json.role) {
+						setUser((prev) => prev || { id: json.id, email: json.email, role: json.role });
+					}
+				} catch (_) {
+					// ignora falha de decode; usuário continuará null até próxima ação
+				}
+			}
 			refreshToken();
 		}
 	}, [isAuthenticated]);
@@ -658,38 +633,42 @@ function App() {
 				<div className="space-y-6">
 					{/* Abas de Navegação */}
 					<div className="flex space-x-1 bg-white p-1 rounded-lg shadow-sm">
-						{navigation.map((item) => {
-							const Icon = item.icon;
-							return (
-								<button
-									key={item.id}
-									onClick={() => setActiveTab(item.id)}
-									className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-										activeTab === item.id
-											? "bg-primary text-primary-foreground"
-											: "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-									}`}
-								>
-									<Icon className="h-4 w-4" />
-									{item.name}
-								</button>
-							);
-						})}
+						{navigation
+							.filter((item) => !item.allowedRoles || item.allowedRoles.includes(user?.role))
+							.map((item) => {
+								const Icon = item.icon;
+								return (
+									<button
+										key={item.id}
+										onClick={() => setActiveTab(item.id)}
+										className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+											activeTab === item.id
+												? "bg-primary text-primary-foreground"
+												: "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+										}`}
+									>
+										<Icon className="h-4 w-4" />
+										{item.name}
+									</button>
+								);
+							})}
 					</div>
 
 					{/* Conteúdo */}
 					<div>
-						{navigation.map((item) => {
-							const Component = item.component;
-							return (
-								<div
-									key={item.id}
-									className={activeTab === item.id ? "block" : "hidden"}
-								>
-									<Component />
-								</div>
-							);
-						})}
+						{navigation
+							.filter((item) => !item.allowedRoles || item.allowedRoles.includes(user?.role))
+							.map((item) => {
+								const Component = item.component;
+								return (
+									<div
+										key={item.id}
+										className={activeTab === item.id ? "block" : "hidden"}
+									>
+										<Component />
+									</div>
+								);
+							})}
 					</div>
 				</div>
 			</div>

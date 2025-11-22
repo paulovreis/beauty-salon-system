@@ -52,7 +52,13 @@ const NotificationSettings = () => {
       // Atualizar lista local
       setEmployees(prev => prev.map(emp => 
         emp.employee_id === employeeId 
-          ? { ...emp, ...settings, updated_at: new Date().toISOString() }
+          ? { 
+              ...emp, 
+              ...settings, 
+              // Ensure notification_types is properly set
+              notification_types: settings.notification_types || emp.notification_types,
+              updated_at: new Date().toISOString() 
+            }
           : emp
       ));
 
@@ -146,7 +152,10 @@ const NotificationSettings = () => {
 
   const toggleNotificationType = (employeeId, notificationType) => {
     const employee = employees.find(emp => emp.employee_id === employeeId);
-    const currentTypes = employee.notification_types || [];
+    // Use same default logic as rendering
+    const currentTypes = employee.notification_types && Array.isArray(employee.notification_types) && employee.notification_types.length > 0
+      ? employee.notification_types
+      : ['daily_schedule', 'new_appointments', 'appointment_changes', 'cancellations'];
     
     let newTypes;
     if (currentTypes.includes(notificationType)) {
@@ -160,6 +169,13 @@ const NotificationSettings = () => {
 
   const toggleEmployeeNotifications = (employeeId, enabled) => {
     updateEmployeeSettings(employeeId, { enabled });
+  };
+
+  const getEmployeeNotificationTypes = (employee) => {
+    // Return employee types with defaults if empty/null
+    return employee.notification_types && Array.isArray(employee.notification_types) && employee.notification_types.length > 0
+      ? employee.notification_types
+      : ['daily_schedule', 'new_appointments', 'appointment_changes', 'cancellations'];
   };
 
   const getNotificationTypeInfo = (typeKey) => {
@@ -241,7 +257,7 @@ const NotificationSettings = () => {
             {checkingLowStock ? '⏳' : '📦'} Estoque Baixo
           </Button>
           <Button onClick={fetchData} disabled={loading}>
-            🔄 Atualizar
+            {loading ? 'Carregando...' : 'Atualizar'}
           </Button>
         </div>
       </div>
@@ -303,7 +319,9 @@ const NotificationSettings = () => {
                           if (type.roles && !type.roles.includes(employee.employee_role)) {
                             return null; // não renderiza tipos não permitidos para o papel
                           }
-                          const isEnabled = (employee.notification_types || []).includes(type.key);
+                          // Use helper function for consistency
+                          const employeeTypes = getEmployeeNotificationTypes(employee);
+                          const isEnabled = employeeTypes.includes(type.key);
                           return (
                             <div
                               key={type.key}
@@ -343,7 +361,7 @@ const NotificationSettings = () => {
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">🔕</div>
+                  <div className="text-lg font-medium mb-2">Notificações Desabilitadas</div>
                   <p>Notificações desabilitadas para este funcionário</p>
                 </div>
               )}
@@ -355,7 +373,6 @@ const NotificationSettings = () => {
       {employees.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
-            <div className="text-4xl mb-4">👥</div>
             <h3 className="text-lg font-medium mb-2">Nenhum funcionário encontrado</h3>
             <p className="text-gray-600">
               Cadastre funcionários para configurar suas notificações

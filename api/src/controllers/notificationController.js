@@ -224,7 +224,6 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
       FROM employees e
       LEFT JOIN users u ON u.id = e.user_id
       LEFT JOIN employee_notifications en ON en.employee_id = e.id
-      WHERE e.status = 'active'
       ORDER BY e.name
     `);
 
@@ -253,7 +252,6 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
       FROM employees e
       LEFT JOIN users u ON u.id = e.user_id
       LEFT JOIN employee_notifications en ON en.employee_id = e.id
-      WHERE e.status = 'active'
       ORDER BY e.name
     `);
 
@@ -608,7 +606,7 @@ export const sendTestNotification = async (req, res) => {
       SELECT e.name, e.phone, en.enabled
       FROM employees e
       LEFT JOIN employee_notifications en ON en.employee_id = e.id
-      WHERE e.id = $1 AND e.status = 'active'
+      WHERE e.id = $1
     `, [employeeId]);
 
     if (employeeResult.rows.length === 0) {

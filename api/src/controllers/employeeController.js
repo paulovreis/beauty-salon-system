@@ -164,17 +164,37 @@ const EmployeeController = {
     const db = getPool(req);
     const { id } = req.params;
     try {
-      const { rowCount } = await db.query(
-        "DELETE FROM employees WHERE id = $1",
+      // Verifica existência do funcionário e busca o usuário vinculado
+      const empResult = await db.query(
+        "SELECT id, user_id FROM employees WHERE id = $1",
         [id]
       );
+      const employee = empResult.rows[0];
+      if (!employee) {
+        return res.status(404).json({ message: "Funcionário não encontrado" });
+      }
 
-      const { userCount } = await db.query(
-        "DELETE FROM users WHERE id = $1",
+      // Verifica referências em appointments para evitar violação de FK
+      const { rows: apptCountRows } = await db.query(
+        "SELECT COUNT(1) AS cnt FROM appointments WHERE employee_id = $1",
         [id]
       );
+      const hasAppointments = Number(apptCountRows[0]?.cnt || 0) > 0;
+      if (hasAppointments) {
+        return res.status(409).json({
+          message: "Não é possível remover o funcionário: existem agendamentos vinculados",
+          error: "employee_has_appointments"
+        });
+      }
 
-      if (!rowCount) return res.status(404).json({ message: "Funcionário não encontrado" });
+      // Remove funcionário
+      await db.query("DELETE FROM employees WHERE id = $1", [id]);
+
+      // Opcional: remove o usuário vinculado (se existir)
+      if (employee.user_id) {
+        await db.query("DELETE FROM users WHERE id = $1", [employee.user_id]);
+      }
+
       res.json({ message: "Funcionário removido com sucesso" });
     } catch (err) {
       console.log("Erro ao remover funcionário:", err);
