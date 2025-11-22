@@ -140,7 +140,24 @@ export default function WhatsApp() {
       
       const response = await evolutionApi.getInstances();
       console.log('Resposta da API:', response);
-      setInstances(response || []);
+      // Normaliza resposta para evitar instanceName undefined
+      const rawList = Array.isArray(response)
+        ? response
+        : (Array.isArray(response?.instances) ? response.instances : []);
+
+      const normalized = rawList.map((it) => {
+        const name = it.instanceName || it.instance || it.name || it?.connection?.instance || it?.config?.instanceName;
+        const status = (it.status || it.state || it.connectionStatus || it?.connection?.status || it?.connection?.state || '').toString();
+        const profileName = it.profileName || it.pushName || it?.profile?.name || it?.user?.name || '';
+        return {
+          name,
+          status,
+          profileName,
+          _raw: it
+        };
+      }).filter(it => !!it.name);
+
+      setInstances(normalized);
     } catch (err) {
       console.error('Erro detalhado:', err);
       setError('Erro ao carregar instâncias: ' + err.message);
@@ -358,14 +375,14 @@ export default function WhatsApp() {
           ) : (
             <div className="space-y-4">
               {instances.map((instance) => (
-                <div key={instance.instanceName || instance.instance} className="flex items-center justify-between p-4 border rounded-lg">
+                <div key={instance.name} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3">
                       <MessageCircle className="h-5 w-5 text-green-600" />
                       <div>
-                        <h3 className="font-medium">{instance.instanceName || instance.instance}</h3>
+                        <h3 className="font-medium">{instance.name}</h3>
                         <div className="flex items-center space-x-2 mt-1">
-                          {getStatusBadge(instance.status || instance.state)}
+                          {getStatusBadge(instance.status)}
                           {instance.profileName && (
                             <span className="text-sm text-gray-600">
                               {instance.profileName}
@@ -377,14 +394,14 @@ export default function WhatsApp() {
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Button
+                    {/* <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleViewContacts(instance.instanceName || instance.instance)}
+                      onClick={() => handleViewContacts(instance.name)}
                       title="Ver contatos"
                     >
                       <Users className="h-4 w-4" />
-                    </Button>
+                    </Button> */}
                     
                     <Button
                       variant="ghost"
@@ -392,7 +409,7 @@ export default function WhatsApp() {
                       onClick={() => {
                         setMessageData({
                           ...messageData,
-                          instanceName: instance.instanceName || instance.instance
+                          instanceName: instance.name
                         });
                         setShowMessageModal(true);
                       }}
@@ -404,7 +421,7 @@ export default function WhatsApp() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleConnectInstance(instance.instanceName || instance.instance)}
+                      onClick={() => handleConnectInstance(instance.name)}
                       title="Conectar/QR Code"
                     >
                       <QrCode className="h-4 w-4" />
@@ -413,7 +430,7 @@ export default function WhatsApp() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteInstance(instance.instanceName || instance.instance)}
+                      onClick={() => handleDeleteInstance(instance.name)}
                       className="text-red-600 hover:text-red-800"
                       title="Excluir instância"
                     >
