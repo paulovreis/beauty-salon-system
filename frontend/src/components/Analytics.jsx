@@ -53,8 +53,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color = "blu
   );
 };
 
-// Componente para gráficos de área
-const AreaChartComponent = ({ data, dataKey, title, color = "#8884d8" }) => (
+// Componente para gráficos de área (xKey configurável)
+const AreaChartComponent = ({ data, dataKey, title, color = "#8884d8", xKey = "month" }) => (
   <Card>
     <CardHeader>
       <CardTitle>{title}</CardTitle>
@@ -63,7 +63,7 @@ const AreaChartComponent = ({ data, dataKey, title, color = "#8884d8" }) => (
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="month" />
+          <XAxis dataKey={xKey} />
           <YAxis />
           <Tooltip formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, title]} />
           <Area type="monotone" dataKey={dataKey} stroke={color} fill={color} fillOpacity={0.3} />
@@ -73,8 +73,8 @@ const AreaChartComponent = ({ data, dataKey, title, color = "#8884d8" }) => (
   </Card>
 );
 
-// Componente para gráficos de barras
-const BarChartComponent = ({ data, dataKey, title, color = "#8884d8" }) => (
+// Componente para gráficos de barras (xKey configurável)
+const BarChartComponent = ({ data, dataKey, title, color = "#8884d8", xKey = "category" }) => (
   <Card>
     <CardHeader>
       <CardTitle>{title}</CardTitle>
@@ -83,7 +83,7 @@ const BarChartComponent = ({ data, dataKey, title, color = "#8884d8" }) => (
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="category" />
+          <XAxis dataKey={xKey} />
           <YAxis />
           <Tooltip formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, title]} />
           <Bar dataKey={dataKey} fill={color} />
@@ -107,7 +107,7 @@ const PieChartComponent = ({ data, title }) => (
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            label={({ name, value }) => `${name} ${parseInt(value, 10)} Clientes`}
             outerRadius={80}
             fill="#8884d8"
             dataKey="value"
@@ -116,7 +116,7 @@ const PieChartComponent = ({ data, title }) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 'Valor']} />
+          <Tooltip formatter={(value) => [`${parseInt(value, 10)}`, 'Clientes']} />
         </PieChart>
       </ResponsiveContainer>
     </CardContent>
@@ -244,43 +244,46 @@ export default function Analytics() {
   if (!data) return null;
 
   // Preparar dados para os gráficos
-  const monthlyRevenueData = data.revenue.monthlyRevenue.map(item => ({
+  const monthlyRevenueData = (data.revenue?.monthlyRevenue || []).map(item => ({
     month: item.month,
     revenue: Number(item.revenue || 0),
     appointments: Number(item.appointments_count || 0)
   }));
 
-  const categoryRevenueData = data.revenue.revenueByCategory.map(item => ({
+  const categoryRevenueData = (data.revenue?.revenueByCategory || []).map(item => ({
     category: item.category || 'Sem categoria',
     revenue: Number(item.revenue || 0),
     appointments: Number(item.appointments_count || 0)
   }));
 
-  const employeeRevenueData = data.revenue.revenueByEmployee.map(item => ({
+  const employeeRevenueData = (data.revenue?.revenueByEmployee || [])
+    .map(item => ({
     employee: item.employee,
     revenue: Number(item.revenue || 0),
     appointments: Number(item.appointments_count || 0)
-  }));
+  }))
+    .sort((a,b) => b.revenue - a.revenue);
 
-  const customerSegmentData = data.customers.customerSegments.map(item => ({
+  const customerSegmentData = (data.customers?.customerSegments || []).map(item => ({
     name: item.segment,
     value: Number(item.count || 0),
     avgSpent: Number(item.avg_spent || 0)
   }));
 
-  const weeklyPerformanceData = data.services.weeklyPerformance.map(item => ({
+  const dayOrder = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  const weeklyPerformanceData = (data.services?.weeklyPerformance || []).map(item => ({
     day: item.day_name?.trim(),
     appointments: Number(item.appointments_count || 0),
     revenue: Number(item.revenue || 0)
-  }));
+  })).sort((a,b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
 
-  const hourlyPerformanceData = data.services.hourlyPerformance.map(item => ({
+  const hourlyPerformanceData = (data.services?.hourlyPerformance || []).map(item => ({
     hour: `${item.hour}:00`,
     appointments: Number(item.appointments_count || 0),
     revenue: Number(item.revenue || 0)
   }));
 
-  const monthlyFinancialData = data.financial.monthlyFinancials.map(item => ({
+  const monthlyFinancialData = (data.financial?.monthlyFinancials || []).map(item => ({
     month: item.month,
     revenue: Number(item.total_revenue || 0),
     expenses: Number(item.total_expenses || 0),
@@ -366,12 +369,14 @@ export default function Analytics() {
               dataKey="revenue"
               title="Evolução da Receita (12 meses)"
               color="#10B981"
+              xKey="month"
             />
             <BarChartComponent
               data={weeklyPerformanceData}
               dataKey="revenue"
               title="Performance por Dia da Semana"
               color="#3B82F6"
+              xKey="day"
             />
           </div>
 
@@ -432,12 +437,14 @@ export default function Analytics() {
               dataKey="revenue"
               title="Receita Mensal"
               color="#10B981"
+              xKey="month"
             />
             <BarChartComponent
               data={categoryRevenueData}
               dataKey="revenue"
               title="Receita por Categoria de Serviço"
               color="#F59E0B"
+              xKey="category"
             />
           </div>
           
@@ -494,19 +501,31 @@ export default function Analytics() {
                   <div className="flex justify-between items-center">
                     <span>Ativos (30 dias)</span>
                     <Badge variant="default">
-                      {((data.customers.retentionAnalysis.active_last_30 / data.customers.retentionAnalysis.total_customers) * 100).toFixed(1)}%
+                      {(
+                        data.customers?.retentionAnalysis?.total_customers
+                          ? (data.customers.retentionAnalysis.active_last_30 / data.customers.retentionAnalysis.total_customers) * 100
+                          : 0
+                      ).toFixed(1)}%
                     </Badge>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Moderadamente Ativos (60 dias)</span>
                     <Badge variant="secondary">
-                      {((data.customers.retentionAnalysis.active_last_60 / data.customers.retentionAnalysis.total_customers) * 100).toFixed(1)}%
+                      {(
+                        data.customers?.retentionAnalysis?.total_customers
+                          ? (data.customers.retentionAnalysis.active_last_60 / data.customers.retentionAnalysis.total_customers) * 100
+                          : 0
+                      ).toFixed(1)}%
                     </Badge>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Pouco Ativos (90 dias)</span>
                     <Badge variant="outline">
-                      {((data.customers.retentionAnalysis.active_last_90 / data.customers.retentionAnalysis.total_customers) * 100).toFixed(1)}%
+                      {(
+                        data.customers?.retentionAnalysis?.total_customers
+                          ? (data.customers.retentionAnalysis.active_last_90 / data.customers.retentionAnalysis.total_customers) * 100
+                          : 0
+                      ).toFixed(1)}%
                     </Badge>
                   </div>
                 </div>

@@ -1209,6 +1209,7 @@ Volte sempre! 😊✨`;
       'service_deleted': '🗑️✂️ ',
       'inventory_restock': '📈📦',
       'inventory_output': '📉📦',
+      'inventory_update': '🔄📦',
       'low_stock_alert': '⚠️📦',
       'expense_created': '🆕💸',
       'expense_updated': '✏️💸',
@@ -1227,6 +1228,7 @@ Volte sempre! 😊✨`;
       'service_deleted': 'SERVIÇO REMOVIDO',
       'inventory_restock': 'ESTOQUE REPOSTO',
       'inventory_output': 'SAÍDA DE ESTOQUE',
+      'inventory_update': 'ESTOQUE ATUALIZADO',
       'low_stock_alert': 'ESTOQUE BAIXO',
       'expense_created': 'NOVA DESPESA REGISTRADA',
       'expense_updated': 'DESPESA ATUALIZADA',
@@ -1260,43 +1262,133 @@ Volte sempre! 😊✨`;
   // Formatação de labels de campos
   formatFieldLabel(key) {
     const labels = {
+      // Comuns
+      'id': 'ID',
       'name': 'Nome',
       'description': 'Descrição',
-      'price': 'Preço',
-      'cost': 'Custo',
-      'quantity': 'Quantidade',
-      'min_stock': 'Estoque Mínimo',
-      'category': 'Categoria',
-      'duration_minutes': 'Duração',
-      'amount': 'Valor',
-      'expense_date': 'Data',
-      'payment_method': 'Forma de Pagamento',
+      'notes': 'Observações',
       'status': 'Status',
+      'is_active': 'Ativo',
       'phone': 'Telefone',
       'email': 'E-mail',
       'role': 'Função',
       'hire_date': 'Data de Contratação',
       'reason': 'Motivo',
-      'notes': 'Observações'
+      'address': 'Endereço',
+      
+      // Serviços
+      'price': 'Preço',
+      'base_cost': 'Custo Base',
+      'recommended_price': 'Preço Recomendado',
+      'profit_margin': 'Margem de Lucro',
+      'duration_minutes': 'Duração',
+      'category': 'Categoria',
+      
+      // Despesas
+      'amount': 'Valor',
+      'expense_date': 'Data',
+      'payment_method': 'Forma de Pagamento',
+      'receipt_number': 'Nº do Recibo',
+      
+      // Produtos/Estoque
+      'selling_price': 'Preço de Venda',
+      'cost_price': 'Preço de Custo',
+      'current_stock': 'Estoque Atual',
+      'min_stock_level': 'Estoque Mínimo',
+      'max_stock_level': 'Estoque Máximo',
+      'old_stock': 'Estoque Anterior',
+      'new_stock': 'Estoque Atual',
+      'difference': 'Diferença',
+      'sku': 'SKU',
+      'supplier_name': 'Fornecedor',
+      'supplier_contact': 'Contato do Fornecedor',
+      'category_id': 'Categoria',
+      'base_salary': 'Salário Base',
     };
-    
-    return labels[key] || key.charAt(0).toUpperCase() + key.slice(1);
+
+    if (labels[key]) return labels[key];
+
+    // Fallback: converte snake_case/camelCase para Título com espaços
+    const spaced = key
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .toLowerCase()
+      .split(' ')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+    return spaced;
   }
 
   // Formatação de valores de campos
   formatFieldValue(key, value) {
-    if (key.includes('price') || key.includes('cost') || key.includes('amount')) {
-      return `R$ ${parseFloat(value).toFixed(2)}`;
+    // Booleanos
+    if (typeof value === 'boolean') {
+      return value ? 'Sim' : 'Não';
     }
-    
+
+    // Valores monetários
+    if (key.includes('price') || key.includes('cost') || key.includes('amount') || key.includes('valor') || key.includes('salary')) {
+      const num = Number(value) || 0;
+      return `R$ ${num.toFixed(2)}`;
+    }
+
+    // Percentuais (margem etc.)
+    if (key.includes('margin') || key.includes('percentage') || key.endsWith('_percent')) {
+      const num = Number(value);
+      if (isFinite(num)) return `${num.toFixed(2)}%`;
+    }
+
+    // Datas
     if (key.includes('date')) {
-      return new Date(value).toLocaleDateString('pt-BR');
+      try {
+        return new Date(value).toLocaleDateString('pt-BR');
+      } catch {
+        return value;
+      }
     }
-    
+
+    // Duração
     if (key === 'duration_minutes') {
       return `${value} min`;
     }
-    
+
+    // Número do recibo vazio
+    if (key === 'receipt_number') {
+      return value ? value : 'Não informado';
+    }
+
+    // Forma de pagamento
+    if (key === 'payment_method') {
+      const map = {
+        'cash': 'Dinheiro',
+        'dinheiro': 'Dinheiro',
+        'credit': 'Crédito',
+        'credit_card': 'Crédito',
+        'debit': 'Débito',
+        'debit_card': 'Débito',
+        'pix': 'PIX',
+        'transfer': 'Transferência',
+        'bank_transfer': 'Transferência',
+        'boleto': 'Boleto'
+      };
+      const v = String(value).toLowerCase();
+      return map[v] || value;
+    }
+
+    // Status comuns
+    if (key === 'status') {
+      const map = {
+        'active': 'Ativo',
+        'inactive': 'Inativo',
+        'completed': 'Concluído',
+        'canceled': 'Cancelado',
+        'cancelled': 'Cancelado',
+        'scheduled': 'Agendado'
+      };
+      const v = String(value).toLowerCase();
+      return map[v] || value;
+    }
+
     return value;
   }
 

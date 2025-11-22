@@ -198,10 +198,11 @@ export default function Expenses() {
   };
 
   const formatCurrency = (value) => {
+    const n = Number(value || 0);
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(value);
+    }).format(n);
   };
 
   const formatDate = (dateString) => {
@@ -381,13 +382,13 @@ export default function Expenses() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="text-2xl font-bold">
-                    {analytics && formatCurrency(analytics.current_month.total)}
+                    {formatCurrency(analytics?.current_month?.total || 0)}
                   </div>
                   <p className="text-xs text-gray-600">Mês Atual</p>
                   {analytics && (
                     <div className={`text-xs ${analytics.month_growth_percentage >= 0 ? 'text-red-500' : 'text-green-500'}`}>
                       {analytics.month_growth_percentage >= 0 ? '+' : ''}
-                      {analytics.month_growth_percentage.toFixed(1)}% vs mês anterior
+                      {Number(analytics.month_growth_percentage || 0).toFixed(1)}% vs mês anterior
                     </div>
                   )}
                 </CardContent>
@@ -416,21 +417,24 @@ export default function Expenses() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {summary.by_category.map(cat => (
+                  {summary.by_category.map(cat => {
+                    const total = Number(cat.total_amount || cat.total || 0);
+                    const count = Number(cat.count || 0);
+                    const avg = count > 0 ? total / count : 0;
+                    const totalAll = Number(summary?.total?.total_amount || 0);
+                    const progress = totalAll > 0 ? (total / totalAll) * 100 : 0;
+                    return (
                     <div key={cat.category}>
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-medium">{cat.category}</span>
-                        <span className="font-bold">{formatCurrency(cat.total)}</span>
+                        <span className="font-bold">{formatCurrency(total)}</span>
                       </div>
-                      <Progress 
-                        value={(cat.total / summary.total.total_amount) * 100} 
-                        className="h-2"
-                      />
+                      <Progress value={progress} className="h-2" />
                       <div className="text-xs text-gray-500 mt-1">
-                        {cat.count} despesas • Média: {formatCurrency(cat.total / cat.count)}
+                        {count} despesas • Média: {formatCurrency(cat.avg_amount ?? avg)}
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </CardContent>
             </Card>

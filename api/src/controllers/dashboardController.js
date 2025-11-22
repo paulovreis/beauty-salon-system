@@ -581,8 +581,8 @@ class DashboardController {
         ORDER BY total_amount DESC
       `);
 
-      // Comissões dos funcionários
-      const commissionsAnalysis = await pool.query(`
+      // Comissões dos funcionários (preferencialmente da tabela de pagamentos; fallback por agendamentos)
+      let commissionsAnalysis = await pool.query(`
         SELECT 
           e.name as employee,
           SUM(ec.commission_amount) as total_commissions,
@@ -594,6 +594,23 @@ class DashboardController {
         GROUP BY e.id, e.name
         ORDER BY total_commissions DESC
       `);
+
+      if (!commissionsAnalysis.rows || commissionsAnalysis.rows.length === 0) {
+        commissionsAnalysis = await pool.query(`
+          SELECT 
+            e.name as employee,
+            COALESCE(SUM(a.commission_amount), 0) as total_commissions,
+            AVG(es.commission_rate) as avg_commission_rate,
+            COUNT(a.id) as commission_count
+          FROM appointments a
+          JOIN employees e ON a.employee_id = e.id
+          LEFT JOIN employee_specialties es ON es.employee_id = e.id AND es.service_id = a.service_id
+          WHERE a.status = 'completed'
+            AND a.appointment_date >= CURRENT_DATE - INTERVAL '12 months'
+          GROUP BY e.id, e.name
+          ORDER BY total_commissions DESC
+        `);
+      }
 
       res.json({
         monthlyFinancials: monthlyFinancials.rows,
@@ -1181,7 +1198,7 @@ class DashboardController {
   }
 
   async getFinancialAnalysisData(pool) {
-    const [monthlyFinancials, paymentMethods, commissionsAnalysis] = await Promise.all([
+    let [monthlyFinancials, paymentMethods, commissionsAnalysis] = await Promise.all([
       pool.query(`
         SELECT 
           month,
@@ -1253,6 +1270,23 @@ class DashboardController {
         ORDER BY total_commissions DESC
       `)
     ]);
+
+    if (!commissionsAnalysis.rows || commissionsAnalysis.rows.length === 0) {
+      commissionsAnalysis = await pool.query(`
+        SELECT 
+          e.name as employee,
+          COALESCE(SUM(a.commission_amount), 0) as total_commissions,
+          AVG(es.commission_rate) as avg_commission_rate,
+          COUNT(a.id) as commission_count
+        FROM appointments a
+        JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN employee_specialties es ON es.employee_id = e.id AND es.service_id = a.service_id
+        WHERE a.status = 'completed'
+          AND a.appointment_date >= CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY e.id, e.name
+        ORDER BY total_commissions DESC
+      `);
+    }
 
     return {
       monthlyFinancials: monthlyFinancials.rows,
