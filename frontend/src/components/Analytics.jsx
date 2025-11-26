@@ -290,15 +290,27 @@ export default function Analytics() {
     profit: Number(item.net_profit || 0)
   }));
 
+  // Tradução visual de métodos de pagamento
+  const paymentLabel = (code) => {
+    const c = String(code||'').toLowerCase();
+    if(c==='cash') return 'Dinheiro';
+    if(c==='credit') return 'Crédito';
+    if(c==='debit') return 'Débito';
+    if(c==='pix') return 'PIX';
+    if(c==='transfer') return 'Transferência';
+    if(c==='boleto') return 'Boleto';
+    return code || '—';
+  };
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6" ref={analyticsRef}>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" ref={analyticsRef}>
       {/* Header com ações */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard Analítico</h1>
           <p className="text-gray-600 mt-1">Análise completa de performance e insights estratégicos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={fetchAnalyticsData} variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
             Atualizar
@@ -352,7 +364,7 @@ export default function Analytics() {
 
       {/* Tabs para diferentes análises */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="w-full overflow-x-auto flex gap-2 md:grid md:grid-cols-6">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="revenue">Receita</TabsTrigger>
           <TabsTrigger value="customers">Clientes</TabsTrigger>
@@ -744,7 +756,7 @@ export default function Analytics() {
                 <CardTitle>Análise Financeira Mensal</CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
+                <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={monthlyFinancialData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
@@ -769,7 +781,7 @@ export default function Analytics() {
                 <div className="space-y-3">
                   {data.financial.paymentMethods.map((method, index) => (
                     <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span className="font-medium">{method.payment_method}</span>
+                      <span className="font-medium">{paymentLabel(method.payment_method)}</span>
                       <div className="text-right">
                         <Badge variant="default">{method.transaction_count} transações</Badge>
                         <p className="text-sm text-gray-600 mt-1">

@@ -17,7 +17,7 @@ describe('Notifications listing includes employees without status', () => {
     const userId = userRows[0].id;
     const { rows: empRows } = await pool.query(
       `INSERT INTO employees (user_id, name, email, phone, status) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [userId, 'Notificado', 'notify@test.com', '11911112222', null]
+      [userId, 'Notificado', 'notify@test.com', '77981365540', null]
     );
     employeeId = empRows[0].id;
   });

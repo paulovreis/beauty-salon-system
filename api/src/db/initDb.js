@@ -361,6 +361,24 @@ export const createTables = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_registered_by ON stock_movements(registered_by);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements(created_at DESC);`);
 
+    // Pagamentos de agendamentos (serviços)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointment_payments (
+        id SERIAL PRIMARY KEY,
+        appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        payment_method VARCHAR(30) NOT NULL,
+        paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Índices para pagamentos de agendamentos
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appt_payments_appt ON appointment_payments(appointment_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appt_payments_paid_at ON appointment_payments(paid_at DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appt_payments_method ON appointment_payments(payment_method);`);
+
     // Inserir categorias padrão de despesas se não existirem
     const defaultCategories = [
       { name: 'Aluguel', description: 'Aluguel do estabelecimento', icon: 'home', color: '#3B82F6' },

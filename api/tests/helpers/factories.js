@@ -12,7 +12,7 @@ export async function createUser(pool, { email = 'user@test.com', password = 'se
   return rows[0];
 }
 
-export async function createEmployee(pool, { user_id = null, name = 'Emp Test', email = 'emp@test.com', phone = '11999990000', status = 'active' } = {}) {
+export async function createEmployee(pool, { user_id = null, name = 'Emp Test', email = 'emp@test.com', phone = '00000000000', status = 'active' } = {}) {
   const { rows } = await pool.query(
     `INSERT INTO employees (user_id, name, email, phone, status) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [user_id, name, email, phone, status]

@@ -56,6 +56,18 @@ export default function Scheduling() {
   const [editing, setEditing] = useState(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [toast, setToast] = useState(null) // {type,message}
+  // Payment modal state
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [paymentTarget, setPaymentTarget] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const paymentMethods = [
+    { value: 'cash', label: 'Dinheiro' },
+    { value: 'credit', label: 'Crédito' },
+    { value: 'debit', label: 'Débito' },
+    { value: 'pix', label: 'PIX' },
+    { value: 'transfer', label: 'Transferência' },
+    { value: 'boleto', label: 'Boleto' },
+  ]
   const statusOptions = [
     { value: 'scheduled', label: 'pendente' },
     { value: 'confirmed', label: 'confirmado' },
@@ -403,7 +415,13 @@ export default function Scheduling() {
     try {
       let updated;
       if(newStatus==='confirmed') updated = await SchedulingApi.confirm(appointment.id)
-      else if(newStatus==='completed') updated = await SchedulingApi.complete(appointment.id)
+      else if(newStatus==='completed') {
+        // Open payment dialog to choose method
+        setPaymentTarget(appointment)
+        setPaymentMethod('cash')
+        setShowPaymentDialog(true)
+        return
+      }
       else if(newStatus==='canceled') updated = await SchedulingApi.cancel(appointment.id)
       else updated = await SchedulingApi.update(appointment.id,{status:newStatus})
       setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: updated.status } : a))
@@ -415,6 +433,22 @@ export default function Scheduling() {
       setToast({type:'error', message:'Erro ao alterar status: '+(e.response?.data?.message || e.message)})
     } finally {
       setStatusMenuOpenId(null)
+    }
+  }
+
+  const handleConfirmPayment = async () => {
+    if (!paymentTarget) return
+    try {
+      const updated = await SchedulingApi.complete(paymentTarget.id, { payment_method: paymentMethod })
+      setAppointments(prev => prev.map(a => a.id === paymentTarget.id ? { ...a, status: updated.status } : a))
+      await Promise.all([loadNextFive(), loadUpcoming(true)])
+      setToast({type:'success', message:'Serviço concluído e pagamento registrado'})
+      window.dispatchEvent(new CustomEvent('appointments:changed'))
+    } catch (e) {
+      setToast({type:'error', message:'Erro ao registrar pagamento: '+(e.response?.data?.message || e.message)})
+    } finally {
+      setShowPaymentDialog(false)
+      setPaymentTarget(null)
     }
   }
 
@@ -924,6 +958,33 @@ export default function Scheduling() {
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeleteTarget(null) }}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteAppointment}>Excluir</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Method Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Forma de pagamento</DialogTitle>
+            <DialogDescription>Selecione a forma de pagamento para concluir o atendimento.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>Método</Label>
+            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
+              <SelectContent>
+                {paymentMethods.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="secondary" onClick={()=>{setShowPaymentDialog(false); setPaymentTarget(null)}}>Cancelar</Button>
+            <Button onClick={handleConfirmPayment}>Confirmar</Button>
           </div>
         </DialogContent>
       </Dialog>

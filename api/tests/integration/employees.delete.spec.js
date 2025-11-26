@@ -20,7 +20,7 @@ describe('Employees deletion behavior', () => {
 
     const { rows: empRows } = await pool.query(
       `INSERT INTO employees (user_id, name, email, phone, status) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [ids.userId, 'Funcionario Teste', 'emp@test.com', '11999990000', 'active']
+      [ids.userId, 'Funcionario Teste', 'emp@test.com', '77981365540', 'active']
     );
     ids.employeeId = empRows[0].id;
 

@@ -310,7 +310,7 @@ export default function Employees() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Add Employee
+              Adicionar Funcionário
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">

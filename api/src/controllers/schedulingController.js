@@ -848,10 +848,12 @@ class SchedulingController {
 	async transitionStatus(req,res,newStatus){
 		const pool = req.pool;
 		const { id } = req.params;
+		// Permite detalhes de pagamento ao completar
+		const { payment_method, amount, notes } = req.body || {};
 		try {
 			await pool.query('BEGIN');
 			// Busca o agendamento atual
-			const current = await pool.query(`SELECT id, client_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
+			const current = await pool.query(`SELECT id, client_id, employee_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
 			if(!current.rows.length){
 				await pool.query('ROLLBACK');
 				return res.status(404).json({message:'Agendamento não encontrado'});
@@ -862,6 +864,15 @@ class SchedulingController {
 			// Ajusta métricas básicas de cliente quando completa ou cancela
 			if(appt.status !== 'completed' && newStatus === 'completed'){
 				await pool.query(`UPDATE clients SET total_visits = total_visits + 1, total_spent = total_spent + $2, last_visit = CURRENT_DATE WHERE id = $1`,[appt.client_id, appt.price]);
+				// Registrar pagamento do serviço, se método fornecido (ou default)
+				const method = (payment_method || '').toLowerCase().trim();
+				const allowed = ['cash','credit','debit','pix','transfer','boleto'];
+				const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : 'cash');
+				const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
+				await pool.query(
+					`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes) VALUES ($1,$2,$3,$4)`,
+					[id, paidAmount, chosenMethod, notes || null]
+				);
 			}
 			if(appt.status === 'completed' && newStatus === 'canceled'){
 				// Reverte visita/gasto se estava marcado como completed antes

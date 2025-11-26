@@ -72,8 +72,8 @@ export default function Dashboard() {
     fetchData()
   }, [])
 
-  if (loading) return <div className="p-8 text-center">Carregando dashboard...</div>
-  if (error) return <div className="p-8 text-center text-red-600">{error}</div>
+  if (loading) return <div className="p-4 md:p-8 text-center">Carregando dashboard...</div>
+  if (error) return <div className="p-4 md:p-8 text-center text-red-600">{error}</div>
 
   // Exemplo de cálculo de valores para exibir
   const monthlyStats = stats ? {
@@ -87,9 +87,9 @@ export default function Dashboard() {
   } : {}
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-6">
       {/* Métricas principais */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
@@ -138,7 +138,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
         {/* Serviços recentes */}
         <Card>
           <CardHeader>
@@ -202,12 +202,12 @@ export default function Dashboard() {
           <CardDescription>Visão detalhada dos custos operacionais</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {!Array.isArray(expenses) || expenses.length === 0 ? (
               <div className="text-center text-muted-foreground col-span-3">Nenhuma despesa encontrada.</div>
             ) : (
               expenses.map((item) => (
-                <div key={item.category || Math.random()} className="space-y-2">
+                  <div key={item.category || Math.random()} className="space-y-2 p-2 rounded bg-gray-50">
                   <div className="flex justify-between">
                     <span className="text-sm">{item.category_name || item.category || 'Categoria não informada'}</span>
                     <span className="text-sm font-medium">R${Number(item.total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>

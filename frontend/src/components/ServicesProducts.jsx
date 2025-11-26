@@ -605,15 +605,15 @@ export default function ServicesProducts() {
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className="space-y-6"
+        className="space-y-6 p-4 md:p-6"
       >
-        <TabsList>
+        <TabsList className="w-full overflow-x-auto flex gap-2 md:grid md:grid-cols-2">
           <TabsTrigger value="services">Serviços</TabsTrigger>
           <TabsTrigger value="products">Produtos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="services" className="space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <h3 className="text-xl font-semibold">Serviços</h3>
             <Dialog>
               <DialogTrigger asChild>
@@ -661,7 +661,7 @@ export default function ServicesProducts() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="baseCost">Custo Base (R$)</Label>
                       <Input
@@ -807,7 +807,7 @@ export default function ServicesProducts() {
         </TabsContent>
 
         <TabsContent value="products" className="space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <h3 className="text-xl font-semibold">Produtos</h3>
             <Dialog>
               <DialogTrigger asChild>
@@ -858,7 +858,7 @@ export default function ServicesProducts() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="productSku">SKU</Label>
                       <Input
@@ -886,7 +886,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="productSelling">
                         Preço de Venda (R$)
@@ -920,7 +920,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="minStock">Estoque Mínimo</Label>
                       <Input
@@ -952,7 +952,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="supplierName">Fornecedor</Label>
                       <Input

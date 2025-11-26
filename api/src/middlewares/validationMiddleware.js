@@ -1,5 +1,8 @@
 import { body, query, param, validationResult } from "express-validator";
 
+// Métodos de pagamento aceitos no sistema
+const ALLOWED_PAYMENT_METHODS = ['cash','credit','debit','pix','transfer','boleto','other'];
+
 const validationMiddleware = (req, res, next) => {
 	const errors = validationResult(req);
 	if (!errors.isEmpty()) {
@@ -577,6 +580,11 @@ export const validateCreateOutput = [
 		.optional()
 		.isString()
 		.withMessage("Notas devem ser uma string"),
+	body("payment_method")
+		.optional()
+		.isString()
+		.custom((v)=> !v || ALLOWED_PAYMENT_METHODS.includes(String(v).toLowerCase()))
+		.withMessage("Método de pagamento inválido"),
 	validationMiddleware,
 ];
 
@@ -601,6 +609,11 @@ export const validateUpdateOutput = [
 		.optional()
 		.isString()
 		.withMessage("Notas devem ser uma string"),
+	body("payment_method")
+		.optional()
+		.isString()
+		.custom((v)=> !v || ALLOWED_PAYMENT_METHODS.includes(String(v).toLowerCase()))
+		.withMessage("Método de pagamento inválido"),
 	validationMiddleware,
 ];
 

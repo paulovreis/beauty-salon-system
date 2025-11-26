@@ -418,7 +418,9 @@ class InventoryController {
           0, // tax_amount
           0, // discount_amount
           totalAmount,
-          'cash', // payment_method padrão
+          (req.body?.payment_method && ['cash','credit','debit','pix','transfer','boleto','other'].includes(String(req.body.payment_method).toLowerCase()))
+            ? String(req.body.payment_method).toLowerCase()
+            : 'cash',
           'completed',
           `Venda via saída de estoque - ${notes || ''}`
         ]);

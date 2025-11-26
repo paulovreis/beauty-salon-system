@@ -569,14 +569,19 @@ class DashboardController {
         ORDER BY month
       `);
 
-      // Métodos de pagamento
+      // Métodos de pagamento (vendas + pagamentos de agendamentos)
       const paymentMethods = await pool.query(`
-        SELECT 
-          payment_method,
-          COUNT(*) as transaction_count,
-          SUM(total_amount) as total_amount
-        FROM sales
-        WHERE status = 'completed'
+        SELECT payment_method,
+               COUNT(*) as transaction_count,
+               SUM(amount) as total_amount
+        FROM (
+          SELECT payment_method, amount
+          FROM appointment_payments
+          UNION ALL
+          SELECT payment_method, total_amount as amount
+          FROM sales
+          WHERE status = 'completed'
+        ) t
         GROUP BY payment_method
         ORDER BY total_amount DESC
       `);
@@ -1248,12 +1253,17 @@ class DashboardController {
         ORDER BY month
       `),
       pool.query(`
-        SELECT 
-          payment_method,
-          COUNT(*) as transaction_count,
-          SUM(total_amount) as total_amount
-        FROM sales
-        WHERE status = 'completed'
+        SELECT payment_method,
+               COUNT(*) as transaction_count,
+               SUM(amount) as total_amount
+        FROM (
+          SELECT payment_method, amount
+          FROM appointment_payments
+          UNION ALL
+          SELECT payment_method, total_amount as amount
+          FROM sales
+          WHERE status = 'completed'
+        ) t
         GROUP BY payment_method
         ORDER BY total_amount DESC
       `),

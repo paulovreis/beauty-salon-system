@@ -27,8 +27,8 @@ export const SchedulingApi = {
     const res = await axiosWithAuth(`/scheduling/${id}/confirm`, { method:'post' });
     return res.data;
   },
-  async complete(id){
-    const res = await axiosWithAuth(`/scheduling/${id}/complete`, { method:'post' });
+  async complete(id, payload){
+    const res = await axiosWithAuth(`/scheduling/${id}/complete`, { method:'post', data: payload });
     return res.data;
   },
   async cancel(id){

@@ -144,6 +144,7 @@ function LoginPage({ onLogin, onShowRegister, onShowForgotPassword }) {
 					<button
 						type="button"
 						className="text-primary underline"
+						hidden
 						onClick={onShowRegister}
 					>
 						Criar nova conta
