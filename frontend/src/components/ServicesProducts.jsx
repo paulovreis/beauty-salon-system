@@ -88,10 +88,14 @@ export default function ServicesProducts() {
     setLoading(true);
     setError("");
     try {
-      const res = await axiosWithAuth("/products/", { method: "get" });
-      setProducts(res.data);
+      const res = await axiosWithAuth("/inventory", { method: "get" });
+      // O endpoint /inventory retorna { products: [...], pagination: {...} }
+      const productsData = res.data?.products || [];
+      // Garantir que products seja sempre um array
+      setProducts(Array.isArray(productsData) ? productsData : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setProducts([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
     }
@@ -103,9 +107,11 @@ export default function ServicesProducts() {
       const res = await axiosWithAuth("/products/categories", {
         method: "get",
       });
-      setProductCategories(res.data);
+      // Garantir que productCategories seja sempre um array
+      setProductCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setProductCategories([]); // Definir como array vazio em caso de erro
     }
   }
 
@@ -150,9 +156,11 @@ export default function ServicesProducts() {
     setError("");
     try {
       const res = await axiosWithAuth("/services/", { method: "get" });
-      setServices(res.data);
+      // Garantir que services seja sempre um array
+      setServices(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setServices([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
     }
@@ -163,9 +171,11 @@ export default function ServicesProducts() {
       const res = await axiosWithAuth("/services/categories", {
         method: "get",
       });
-      setCategories(res.data);
+      // Garantir que categories seja sempre um array
+      setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e.response?.data?.message || e.message);
+      setCategories([]); // Definir como array vazio em caso de erro
     }
   }
 
@@ -248,49 +258,50 @@ export default function ServicesProducts() {
     setShowEditServiceDialog(true);
   }
 
-  // Salvar edição
-  async function handleSaveEditService() {
-    if (
-      !editingService.name ||
-      !editingService.category_id ||
-      !editingService.base_cost ||
-      !editingService.profit_margin
-    ) {
-      setError("Preencha todos os campos obrigatórios!");
-      return;
-    }
-    setLoading(true);
-    try {
-      // Calcula preço recomendado atualizado
-      const recommended_price = await calculateRecommendedPrice(
-        editingService.base_cost,
-        editingService.profit_margin
-      );
-      await axiosWithAuth(`/services/${editingService.id}`, {
-        method: "put",
-        data: {
-          name: editingService.name,
-          category_id: Number(editingService.category_id),
-          base_cost: Number(editingService.base_cost),
-          profit_margin: Number(editingService.profit_margin),
-          recommended_price: Number(recommended_price),
-          duration_minutes: Number(editingService.duration_minutes),
-          description: editingService.description,
-          is_active:
-            editingService.is_active !== undefined
-              ? editingService.is_active
-              : true,
-        },
-      });
-      setShowEditServiceDialog(false);
-      setEditingService(null);
-      fetchServices();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // // Salvar edição
+  // async function handleSaveEditService() {
+  //   if (
+  //     !editingService.name ||
+  //     !editingService.category_id ||
+  //     !editingService.base_cost ||
+  //     !editingService.profit_margin
+  //   ) {
+  //     setError("Preencha todos os campos obrigatórios!");
+  //     return;
+  //   }
+  //   setLoading(true);
+  //   try {
+  //     console.log('Editing service data before save:', editingService);
+  //     // Calcula preço recomendado atualizado
+  //     const recommended_price = await calculateRecommendedPrice(
+  //       editingService.base_cost,
+  //       editingService.profit_margin
+  //     );
+  //     await axiosWithAuth(`/services/${editingService.id}`, {
+  //       method: "put",
+  //       data: {
+  //         name: editingService.name,
+  //         category_id: Number(editingService.category_id),
+  //         base_cost: Number(editingService.base_cost),
+  //         profit_margin: Number(editingService.profit_margin),
+  //         recommended_price: Number(recommended_price),
+  //         duration_minutes: Number(editingService.duration_minutes),
+  //         description: editingService.description,
+  //         is_active:
+  //           editingService.is_active !== undefined
+  //             ? editingService.is_active
+  //             : true,
+  //       },
+  //     });
+  //     setShowEditServiceDialog(false);
+  //     setEditingService(null);
+  //     fetchServices();
+  //   } catch (e) {
+  //     setError(e.message);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }
 
   async function handleAddProduct() {
     setError("");
@@ -391,11 +402,22 @@ export default function ServicesProducts() {
       }
     }
     
+    // Calcula o preço recomendado usando base_cost e profit_margin
+    let recommended_price = "";
+    if (service.base_cost && service.profit_margin) {
+      recommended_price = (
+      Number(service.base_cost) +
+      (Number(service.base_cost) * Number(service.profit_margin) / 100)
+      ).toFixed(2);
+    }
+
     const editData = {
       id: service.id,
       name: service.name || '',
       description: service.description || '',
-      price: service.recommended_price || service.base_cost || '',
+      base_cost: service.base_cost || '',
+      recommended_price: recommended_price,
+      profit_margin: service.profit_margin || '',
       duration: service.duration_minutes || '',
       category_id: categoryId || ''
     };
@@ -406,8 +428,8 @@ export default function ServicesProducts() {
   }
 
   async function handleSaveEditService() {
-    if (!editingService.name || !editingService.category_id || !editingService.price || !editingService.duration) return;
-    
+    if (!editingService.name || !editingService.category_id || !editingService.base_cost || !editingService.profit_margin || !editingService.recommended_price || !editingService.duration) return;
+
     try {
       setLoading(true);
       await axiosWithAuth(`/services/${editingService.id}`, {
@@ -415,8 +437,8 @@ export default function ServicesProducts() {
         data: {
           name: editingService.name,
           description: editingService.description || null,
-          base_cost: parseFloat(editingService.price) || 0,
-          recommended_price: parseFloat(editingService.price) || 0,
+          base_cost: parseFloat(editingService.base_cost) || 0,
+          recommended_price: parseFloat(editingService.recommended_price) || 0,
           duration_minutes: parseInt(editingService.duration) || 0,
           profit_margin: 20, // valor padrão
           category_id: parseInt(editingService.category_id),
@@ -583,15 +605,15 @@ export default function ServicesProducts() {
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
-        className="space-y-6"
+        className="space-y-6 p-4 md:p-6"
       >
-        <TabsList>
+        <TabsList className="w-full overflow-x-auto flex gap-2 md:grid md:grid-cols-2">
           <TabsTrigger value="services">Serviços</TabsTrigger>
           <TabsTrigger value="products">Produtos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="services" className="space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <h3 className="text-xl font-semibold">Serviços</h3>
             <Dialog>
               <DialogTrigger asChild>
@@ -639,7 +661,7 @@ export default function ServicesProducts() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="baseCost">Custo Base (R$)</Label>
                       <Input
@@ -719,7 +741,7 @@ export default function ServicesProducts() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {services.map((service) => (
+            {Array.isArray(services) && services.length > 0 ? services.map((service) => (
               <Card key={service.id}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -776,12 +798,16 @@ export default function ServicesProducts() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )) : (
+              <div className="col-span-full text-center py-8 text-gray-500">
+                {loading ? "Carregando serviços..." : "Nenhum serviço encontrado."}
+              </div>
+            )}
           </div>
         </TabsContent>
 
         <TabsContent value="products" className="space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <h3 className="text-xl font-semibold">Produtos</h3>
             <Dialog>
               <DialogTrigger asChild>
@@ -832,7 +858,7 @@ export default function ServicesProducts() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="productSku">SKU</Label>
                       <Input
@@ -860,7 +886,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="productSelling">
                         Preço de Venda (R$)
@@ -894,7 +920,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="minStock">Estoque Mínimo</Label>
                       <Input
@@ -926,7 +952,7 @@ export default function ServicesProducts() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="supplierName">Fornecedor</Label>
                       <Input
@@ -967,7 +993,7 @@ export default function ServicesProducts() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => (
+            {Array.isArray(products) && products.length > 0 ? products.map((product) => (
               <Card key={product.id}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
@@ -1049,7 +1075,11 @@ export default function ServicesProducts() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )) : (
+              <div className="col-span-full text-center py-8 text-gray-500">
+                {loading ? "Carregando produtos..." : "Nenhum produto encontrado."}
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -1093,14 +1123,26 @@ export default function ServicesProducts() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="editServicePrice">Preço (R$)</Label>
+              <Label htmlFor="editServicePrice">Preço base (R$)</Label>
               <Input
                 id="editServicePrice"
                 type="number"
                 step="0.01"
-                value={editingService?.price || ""}
+                value={editingService?.base_cost || ""}
                 onChange={(e) =>
-                  setEditingService({ ...editingService, price: e.target.value })
+                  setEditingService({ ...editingService, base_cost: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="editServiceProfit">Margem de lucro (%)</Label>
+              <Input
+                id="editServiceProfit"
+                type="number"
+                step="0.01"
+                value={editingService?.profit_margin || ""}
+                onChange={(e) =>
+                  setEditingService({ ...editingService, profit_margin: e.target.value })
                 }
               />
             </div>

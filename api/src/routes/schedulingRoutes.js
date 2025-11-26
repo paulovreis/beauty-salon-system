@@ -104,6 +104,15 @@ router.get(
 	(req, res) => SchedulingController.getAvailableTimeSlots(req, res)
 );
 
+// get smart available slots considering service duration and conflicts
+router.get(
+	"/smart-slots/:employeeId/:date",
+	authenticateJWT,
+	roleMiddleware(["owner", "manager", "employee"]),
+	validateGetAvailableTimeSlots,
+	(req, res) => SchedulingController.getAvailableTimeSlots(req, res)
+);
+
 // status transitions (confirm, complete, cancel)
 router.post(
 	"/:id/confirm",

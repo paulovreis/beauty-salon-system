@@ -3,7 +3,7 @@ class DashboardController {
     const pool = req.pool;
     try {
       // Estatísticas básicas
-      const [clients, employees, services, appointments, products, totalRevenue] = await Promise.all([
+      const [clients, employees, services, appointments, products, totalRevenue, inventoryStats] = await Promise.all([
         pool.query('SELECT COUNT(*) FROM clients'),
         pool.query('SELECT COUNT(*) FROM employees WHERE status = \'active\''),
         pool.query('SELECT COUNT(*) FROM services WHERE is_active = true'),
@@ -14,6 +14,14 @@ class DashboardController {
             COALESCE(SUM(a.price), 0) as appointments_revenue,
             (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE status = 'completed') as sales_revenue
           FROM appointments a WHERE a.status = 'completed'
+        `),
+        pool.query(`
+          SELECT 
+            COALESCE(SUM(p.current_stock * p.cost_price), 0) as inventory_value,
+            COUNT(CASE WHEN p.current_stock <= p.min_stock_level THEN 1 END) as low_stock_items,
+            COUNT(CASE WHEN p.current_stock <= 0 THEN 1 END) as out_of_stock_items
+          FROM products p 
+          WHERE p.is_active = true
         `)
       ]);
 
@@ -22,7 +30,7 @@ class DashboardController {
         SELECT 
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
           COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_appointments,
-          COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN status = 'canceled' THEN 1 END) as canceled_appointments,
           COALESCE(SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END), 0) as monthly_revenue
         FROM appointments 
         WHERE DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CURRENT_DATE)
@@ -37,6 +45,7 @@ class DashboardController {
 
       const totalRevenueData = totalRevenue.rows[0];
       const monthlyData = currentMonth.rows[0];
+      const inventoryData = inventoryStats.rows[0];
 
       res.json({
         totalClients: Number(clients.rows[0].count),
@@ -48,9 +57,14 @@ class DashboardController {
         monthlyStats: {
           completedAppointments: Number(monthlyData.completed_appointments),
           scheduledAppointments: Number(monthlyData.scheduled_appointments),
-          cancelledAppointments: Number(monthlyData.cancelled_appointments),
+          canceledAppointments: Number(monthlyData.canceled_appointments),
           monthlyRevenue: Number(monthlyData.monthly_revenue),
           newClients: Number(newClients.rows[0].new_clients)
+        },
+        inventoryStats: {
+          inventoryValue: Number(inventoryData.inventory_value),
+          lowStockItems: Number(inventoryData.low_stock_items),
+          outOfStockItems: Number(inventoryData.out_of_stock_items)
         }
       });
     } catch (err) {
@@ -115,14 +129,67 @@ class DashboardController {
   async getExpenseBreakdown(req, res) {
     const pool = req.pool;
     try {
-      const { rows } = await pool.query(`
-        SELECT category, SUM(amount) as total
-        FROM expenses
-        GROUP BY category
+      // Despesas por categoria (últimos 30 dias)
+      const { rows: categoryBreakdown } = await pool.query(`
+        SELECT 
+          e.category,
+          ec.name as category_name,
+          ec.color,
+          ec.icon,
+          COUNT(*) as count,
+          SUM(e.amount) as total,
+          AVG(e.amount) as average,
+          MIN(e.amount) as min_amount,
+          MAX(e.amount) as max_amount
+        FROM expenses e
+        LEFT JOIN expense_categories ec ON e.category = ec.name
+        WHERE e.expense_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY e.category, ec.name, ec.color, ec.icon
         ORDER BY total DESC
       `);
-      res.json(rows);
+
+      // Despesas por método de pagamento
+      const { rows: paymentBreakdown } = await pool.query(`
+        SELECT 
+          payment_method,
+          COUNT(*) as count,
+          SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY payment_method
+        ORDER BY total DESC
+      `);
+
+      // Comparação com período anterior
+      const { rows: currentPeriod } = await pool.query(`
+        SELECT SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '30 days'
+      `);
+
+      const { rows: previousPeriod } = await pool.query(`
+        SELECT SUM(amount) as total
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '60 days'
+        AND expense_date < CURRENT_DATE - INTERVAL '30 days'
+      `);
+
+      const currentTotal = parseFloat(currentPeriod[0]?.total || 0);
+      const previousTotal = parseFloat(previousPeriod[0]?.total || 0);
+      const changePercentage = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal * 100) : 0;
+
+      res.json({
+        by_category: categoryBreakdown,
+        by_payment_method: paymentBreakdown,
+        period_comparison: {
+          current_period: currentTotal,
+          previous_period: previousTotal,
+          change_percentage: parseFloat(changePercentage.toFixed(2)),
+          change_amount: currentTotal - previousTotal
+        }
+      });
     } catch (err) {
+      console.error('Erro ao buscar breakdown de despesas:', err);
       res.status(500).json({ message: 'Erro ao buscar despesas', error: err.message });
     }
   }
@@ -303,11 +370,11 @@ class DashboardController {
       const cancellationRates = await pool.query(`
         SELECT 
           s.name as service,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed,
           COUNT(*) as total,
           ROUND(
-            (COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
+            (COUNT(CASE WHEN a.status = 'canceled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
           ) as cancellation_rate
         FROM services s
         LEFT JOIN appointments a ON s.id = a.service_id
@@ -336,7 +403,7 @@ class DashboardController {
           e.name,
           COUNT(a.*) as total_appointments,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed_appointments,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled_appointments,
           SUM(CASE WHEN a.status = 'completed' THEN a.price ELSE 0 END) as revenue_generated,
           SUM(CASE WHEN a.status = 'completed' THEN a.commission_amount ELSE 0 END) as total_commission,
           AVG(CASE WHEN a.status = 'completed' THEN a.price END) as avg_service_price,
@@ -502,20 +569,25 @@ class DashboardController {
         ORDER BY month
       `);
 
-      // Métodos de pagamento
+      // Métodos de pagamento (vendas + pagamentos de agendamentos)
       const paymentMethods = await pool.query(`
-        SELECT 
-          payment_method,
-          COUNT(*) as transaction_count,
-          SUM(total_amount) as total_amount
-        FROM sales
-        WHERE status = 'completed'
+        SELECT payment_method,
+               COUNT(*) as transaction_count,
+               SUM(amount) as total_amount
+        FROM (
+          SELECT payment_method, amount
+          FROM appointment_payments
+          UNION ALL
+          SELECT payment_method, total_amount as amount
+          FROM sales
+          WHERE status = 'completed'
+        ) t
         GROUP BY payment_method
         ORDER BY total_amount DESC
       `);
 
-      // Comissões dos funcionários
-      const commissionsAnalysis = await pool.query(`
+      // Comissões dos funcionários (preferencialmente da tabela de pagamentos; fallback por agendamentos)
+      let commissionsAnalysis = await pool.query(`
         SELECT 
           e.name as employee,
           SUM(ec.commission_amount) as total_commissions,
@@ -527,6 +599,23 @@ class DashboardController {
         GROUP BY e.id, e.name
         ORDER BY total_commissions DESC
       `);
+
+      if (!commissionsAnalysis.rows || commissionsAnalysis.rows.length === 0) {
+        commissionsAnalysis = await pool.query(`
+          SELECT 
+            e.name as employee,
+            COALESCE(SUM(a.commission_amount), 0) as total_commissions,
+            AVG(es.commission_rate) as avg_commission_rate,
+            COUNT(a.id) as commission_count
+          FROM appointments a
+          JOIN employees e ON a.employee_id = e.id
+          LEFT JOIN employee_specialties es ON es.employee_id = e.id AND es.service_id = a.service_id
+          WHERE a.status = 'completed'
+            AND a.appointment_date >= CURRENT_DATE - INTERVAL '12 months'
+          GROUP BY e.id, e.name
+          ORDER BY total_commissions DESC
+        `);
+      }
 
       res.json({
         monthlyFinancials: monthlyFinancials.rows,
@@ -620,6 +709,123 @@ class DashboardController {
     }
   }
 
+  // Nova análise específica de despesas
+  async getExpenseAnalysis(req, res) {
+    const pool = req.pool;
+    try {
+      // Evolução mensal das despesas (últimos 12 meses)
+      const { rows: monthlyTrend } = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', expense_date) as month,
+          COUNT(*) as count,
+          SUM(amount) as total,
+          AVG(amount) as average
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', expense_date)
+        ORDER BY month ASC
+      `);
+
+      // Top 5 maiores despesas do mês atual
+      const { rows: topExpenses } = await pool.query(`
+        SELECT 
+          description,
+          category,
+          amount,
+          expense_date,
+          payment_method
+        FROM expenses 
+        WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)
+        ORDER BY amount DESC
+        LIMIT 5
+      `);
+
+      // Despesas recorrentes identificadas
+      const { rows: recurringExpenses } = await pool.query(`
+        SELECT 
+          description,
+          category,
+          COUNT(*) as frequency,
+          AVG(amount) as avg_amount,
+          SUM(amount) as total_amount,
+          MIN(expense_date) as first_date,
+          MAX(expense_date) as last_date
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY description, category
+        HAVING COUNT(*) >= 2
+        ORDER BY frequency DESC, total_amount DESC
+        LIMIT 10
+      `);
+
+      // Análise de sazonalidade (por dia da semana)
+      const { rows: weekdayAnalysis } = await pool.query(`
+        SELECT 
+          EXTRACT(DOW FROM expense_date) as day_of_week,
+          CASE EXTRACT(DOW FROM expense_date)
+            WHEN 0 THEN 'Domingo'
+            WHEN 1 THEN 'Segunda'
+            WHEN 2 THEN 'Terça'
+            WHEN 3 THEN 'Quarta'
+            WHEN 4 THEN 'Quinta'
+            WHEN 5 THEN 'Sexta'
+            WHEN 6 THEN 'Sábado'
+          END as day_name,
+          COUNT(*) as count,
+          SUM(amount) as total,
+          AVG(amount) as average
+        FROM expenses 
+        WHERE expense_date >= CURRENT_DATE - INTERVAL '3 months'
+        GROUP BY EXTRACT(DOW FROM expense_date)
+        ORDER BY day_of_week
+      `);
+
+      // Comparação com receitas (se existir tabela de receitas/vendas)
+      const { rows: revenueComparison } = await pool.query(`
+        WITH monthly_expenses AS (
+          SELECT 
+            DATE_TRUNC('month', expense_date) as month,
+            SUM(amount) as total_expenses
+          FROM expenses 
+          WHERE expense_date >= CURRENT_DATE - INTERVAL '6 months'
+          GROUP BY DATE_TRUNC('month', expense_date)
+        ),
+        monthly_revenue AS (
+          SELECT 
+            DATE_TRUNC('month', appointment_date) as month,
+            SUM(price) as total_revenue
+          FROM appointments 
+          WHERE appointment_date >= CURRENT_DATE - INTERVAL '6 months'
+          AND status = 'completed'
+          GROUP BY DATE_TRUNC('month', appointment_date)
+        )
+        SELECT 
+          COALESCE(e.month, r.month) as month,
+          COALESCE(e.total_expenses, 0) as expenses,
+          COALESCE(r.total_revenue, 0) as revenue,
+          CASE 
+            WHEN COALESCE(r.total_revenue, 0) > 0 
+            THEN (COALESCE(e.total_expenses, 0) / COALESCE(r.total_revenue, 0) * 100)
+            ELSE 0 
+          END as expense_ratio
+        FROM monthly_expenses e
+        FULL OUTER JOIN monthly_revenue r ON e.month = r.month
+        ORDER BY month ASC
+      `);
+
+      res.json({
+        monthly_trend: monthlyTrend,
+        top_expenses: topExpenses,
+        recurring_expenses: recurringExpenses,
+        weekday_analysis: weekdayAnalysis,
+        revenue_comparison: revenueComparison
+      });
+    } catch (err) {
+      console.error('Erro ao buscar análise de despesas:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de despesas', error: err.message });
+    }
+  }
+
   // Endpoint para gerar relatório completo (para PDF)
   async getCompleteReport(req, res) {
     const pool = req.pool;
@@ -685,7 +891,7 @@ class DashboardController {
       SELECT 
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
         COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_appointments,
-        COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_appointments,
+        COUNT(CASE WHEN status = 'canceled' THEN 1 END) as canceled_appointments,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END), 0) as monthly_revenue
       FROM appointments 
       WHERE DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CURRENT_DATE)
@@ -710,7 +916,7 @@ class DashboardController {
       monthlyStats: {
         completedAppointments: Number(monthlyData.completed_appointments),
         scheduledAppointments: Number(monthlyData.scheduled_appointments),
-        cancelledAppointments: Number(monthlyData.cancelled_appointments),
+        canceledAppointments: Number(monthlyData.canceled_appointments),
         monthlyRevenue: Number(monthlyData.monthly_revenue),
         newClients: Number(newClients.rows[0].new_clients)
       }
@@ -866,11 +1072,11 @@ class DashboardController {
       pool.query(`
         SELECT 
           s.name as service,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed,
           COUNT(*) as total,
           ROUND(
-            (COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
+            (COUNT(CASE WHEN a.status = 'canceled' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0) * 100), 2
           ) as cancellation_rate
         FROM services s
         LEFT JOIN appointments a ON s.id = a.service_id
@@ -895,7 +1101,7 @@ class DashboardController {
           e.name,
           COUNT(a.*) as total_appointments,
           COUNT(CASE WHEN a.status = 'completed' THEN 1 END) as completed_appointments,
-          COUNT(CASE WHEN a.status = 'cancelled' THEN 1 END) as cancelled_appointments,
+          COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled_appointments,
           SUM(CASE WHEN a.status = 'completed' THEN a.price ELSE 0 END) as revenue_generated,
           SUM(CASE WHEN a.status = 'completed' THEN a.commission_amount ELSE 0 END) as total_commission,
           AVG(CASE WHEN a.status = 'completed' THEN a.price END) as avg_service_price,
@@ -997,7 +1203,7 @@ class DashboardController {
   }
 
   async getFinancialAnalysisData(pool) {
-    const [monthlyFinancials, paymentMethods, commissionsAnalysis] = await Promise.all([
+    let [monthlyFinancials, paymentMethods, commissionsAnalysis] = await Promise.all([
       pool.query(`
         SELECT 
           month,
@@ -1047,12 +1253,17 @@ class DashboardController {
         ORDER BY month
       `),
       pool.query(`
-        SELECT 
-          payment_method,
-          COUNT(*) as transaction_count,
-          SUM(total_amount) as total_amount
-        FROM sales
-        WHERE status = 'completed'
+        SELECT payment_method,
+               COUNT(*) as transaction_count,
+               SUM(amount) as total_amount
+        FROM (
+          SELECT payment_method, amount
+          FROM appointment_payments
+          UNION ALL
+          SELECT payment_method, total_amount as amount
+          FROM sales
+          WHERE status = 'completed'
+        ) t
         GROUP BY payment_method
         ORDER BY total_amount DESC
       `),
@@ -1069,6 +1280,23 @@ class DashboardController {
         ORDER BY total_commissions DESC
       `)
     ]);
+
+    if (!commissionsAnalysis.rows || commissionsAnalysis.rows.length === 0) {
+      commissionsAnalysis = await pool.query(`
+        SELECT 
+          e.name as employee,
+          COALESCE(SUM(a.commission_amount), 0) as total_commissions,
+          AVG(es.commission_rate) as avg_commission_rate,
+          COUNT(a.id) as commission_count
+        FROM appointments a
+        JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN employee_specialties es ON es.employee_id = e.id AND es.service_id = a.service_id
+        WHERE a.status = 'completed'
+          AND a.appointment_date >= CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY e.id, e.name
+        ORDER BY total_commissions DESC
+      `);
+    }
 
     return {
       monthlyFinancials: monthlyFinancials.rows,

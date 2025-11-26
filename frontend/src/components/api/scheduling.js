@@ -27,8 +27,8 @@ export const SchedulingApi = {
     const res = await axiosWithAuth(`/scheduling/${id}/confirm`, { method:'post' });
     return res.data;
   },
-  async complete(id){
-    const res = await axiosWithAuth(`/scheduling/${id}/complete`, { method:'post' });
+  async complete(id, payload){
+    const res = await axiosWithAuth(`/scheduling/${id}/complete`, { method:'post', data: payload });
     return res.data;
   },
   async cancel(id){
@@ -40,8 +40,18 @@ export const SchedulingApi = {
     const res = await axiosWithAuth('/scheduling', { method: 'post', data: payload });
     return res.data;
   },
-  async getAvailableSlots(employeeId, date) {
-    const res = await axiosWithAuth(`/scheduling/available-slots/${employeeId}/${date}`);
+  async getAvailableSlots(employeeId, date, serviceId = null, excludeAppointmentId = null) {
+    let url = `/scheduling/smart-slots/${employeeId}/${date}`;
+    const params = new URLSearchParams();
+    
+    if (serviceId) params.append('serviceId', serviceId);
+    if (excludeAppointmentId) params.append('excludeAppointmentId', excludeAppointmentId);
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+    
+    const res = await axiosWithAuth(url);
     return res.data;
   }
 };

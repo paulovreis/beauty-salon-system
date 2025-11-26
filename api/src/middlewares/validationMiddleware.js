@@ -1,5 +1,8 @@
 import { body, query, param, validationResult } from "express-validator";
 
+// Métodos de pagamento aceitos no sistema
+const ALLOWED_PAYMENT_METHODS = ['cash','credit','debit','pix','transfer','boleto','other'];
+
 const validationMiddleware = (req, res, next) => {
 	const errors = validationResult(req);
 	if (!errors.isEmpty()) {
@@ -116,6 +119,49 @@ export const validateResetToken = [
 	validationMiddleware,
 ];
 
+// Despesas
+export const validateExpenseCreate = [
+	body("category").isString().notEmpty().withMessage("Categoria é obrigatória"),
+	body("description").isString().notEmpty().withMessage("Descrição é obrigatória"),
+	body("amount").isNumeric().withMessage("Valor deve ser numérico").custom((value) => {
+		if (value <= 0) {
+			throw new Error("Valor deve ser maior que zero");
+		}
+		return true;
+	}),
+	body("expense_date").isISO8601().toDate().withMessage("Data da despesa inválida"),
+	body("payment_method").isString().notEmpty().withMessage("Método de pagamento é obrigatório"),
+	body("receipt_number").optional().isString(),
+	body("notes").optional().isString(),
+	validationMiddleware,
+];
+
+export const validateExpenseUpdate = [
+	body("category").optional().isString().notEmpty().withMessage("Categoria não pode ser vazia"),
+	body("description").optional().isString().notEmpty().withMessage("Descrição não pode ser vazia"),
+	body("amount").optional().isNumeric().withMessage("Valor deve ser numérico").custom((value) => {
+		if (value && value <= 0) {
+			throw new Error("Valor deve ser maior que zero");
+		}
+		return true;
+	}),
+	body("expense_date").optional().isISO8601().toDate().withMessage("Data da despesa inválida"),
+	body("payment_method").optional().isString().notEmpty().withMessage("Método de pagamento não pode ser vazio"),
+	body("receipt_number").optional().isString(),
+	body("notes").optional().isString(),
+	validationMiddleware,
+];
+
+export const validateExpenseQuery = [
+	query("page").optional().isInt({ min: 1 }).withMessage("Página deve ser um número inteiro positivo"),
+	query("limit").optional().isInt({ min: 1, max: 100 }).withMessage("Limite deve ser entre 1 e 100"),
+	query("category").optional().isString(),
+	query("start_date").optional().isISO8601().withMessage("Data de início inválida"),
+	query("end_date").optional().isISO8601().withMessage("Data de fim inválida"),
+	query("search").optional().isString(),
+	validationMiddleware,
+];
+
 export const validateGetServiceById = [
 	param("id").isInt().withMessage("ID do serviço deve ser um inteiro"),
 	validationMiddleware,
@@ -190,7 +236,6 @@ export const validateAddServiceEspecialty = [
 	body("employee_id")
 		.isInt()
 		.withMessage("ID do funcionário deve ser um inteiro"),
-	body("service_id").isInt().withMessage("ID do serviço deve ser um inteiro"),
 	body("commission_rate")
 		.isNumeric()
 		.withMessage("Taxa de comissão deve ser um número"),
@@ -362,11 +407,10 @@ export const validateRestockProduct = [
 	body("quantity")
 		.isInt({ min: 1 })
 		.withMessage("Quantidade deve ser um inteiro positivo"),
-	body("unit_cost")
-		.optional()
-		.isNumeric()
-		.withMessage("Custo unitário deve ser um número"),
-	body("notes").optional().isString().withMessage("Notas devem ser uma string"),
+	body("notes")
+		.optional({ nullable: true, checkFalsy: true })
+		.isString()
+		.withMessage("Notas devem ser uma string"),
 	param("id").isInt().withMessage("ID do produto deve ser um inteiro"),
 	validationMiddleware,
 ];
@@ -512,6 +556,71 @@ export const validateGetAvailableTimeSlots = [
 		.isInt()
 		.withMessage("ID do funcionário deve ser um inteiro"),
 	param("date").isISO8601().withMessage("Data inválida"),
+	validationMiddleware,
+];
+
+// Validações para saídas de inventário
+export const validateCreateOutput = [
+	body("product_id")
+		.isInt()
+		.withMessage("ID do produto deve ser um inteiro"),
+	body("quantity")
+		.isInt({ min: 1 })
+		.withMessage("Quantidade deve ser um inteiro positivo"),
+	body("output_type")
+		.optional()
+		.isString()
+		.isIn(['sale', 'loss', 'damage', 'expired', 'transfer', 'sample', 'other'])
+		.withMessage("Tipo de saída inválido"),
+	body("reason")
+		.optional()
+		.isString()
+		.withMessage("Motivo deve ser uma string"),
+	body("notes")
+		.optional()
+		.isString()
+		.withMessage("Notas devem ser uma string"),
+	body("payment_method")
+		.optional()
+		.isString()
+		.custom((v)=> !v || ALLOWED_PAYMENT_METHODS.includes(String(v).toLowerCase()))
+		.withMessage("Método de pagamento inválido"),
+	validationMiddleware,
+];
+
+export const validateUpdateOutput = [
+	param("id")
+		.isInt()
+		.withMessage("ID da saída deve ser um inteiro"),
+	body("quantity")
+		.optional()
+		.isInt({ min: 1 })
+		.withMessage("Quantidade deve ser um inteiro positivo"),
+	body("output_type")
+		.optional()
+		.isString()
+		.isIn(['sale', 'loss', 'damage', 'expired', 'transfer', 'sample', 'other'])
+		.withMessage("Tipo de saída inválido"),
+	body("reason")
+		.optional()
+		.isString()
+		.withMessage("Motivo deve ser uma string"),
+	body("notes")
+		.optional()
+		.isString()
+		.withMessage("Notas devem ser uma string"),
+	body("payment_method")
+		.optional()
+		.isString()
+		.custom((v)=> !v || ALLOWED_PAYMENT_METHODS.includes(String(v).toLowerCase()))
+		.withMessage("Método de pagamento inválido"),
+	validationMiddleware,
+];
+
+export const validateOutputId = [
+	param("id")
+		.isInt()
+		.withMessage("ID da saída deve ser um inteiro"),
 	validationMiddleware,
 ];
 

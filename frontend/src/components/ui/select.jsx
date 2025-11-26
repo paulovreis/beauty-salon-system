@@ -7,15 +7,67 @@ import { cn } from "../../lib/utils"
 const Select = ({ children, value, onValueChange, disabled }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedValue, setSelectedValue] = useState(value || "")
+  const [selectedLabel, setSelectedLabel] = useState("")
+  const [itemsMap, setItemsMap] = useState(new Map())
+
+  // Extrair todos os SelectItems e mapear value -> label
+  useEffect(() => {
+    const extractItems = (children) => {
+      const items = new Map()
+      const processChild = (child) => {
+        if (!React.isValidElement(child)) return
+        
+        if (child.type?.displayName === "SelectItem") {
+          const childValue = child.props.value
+          let childLabel = ''
+          
+          if (typeof child.props.children === 'string') {
+            childLabel = child.props.children
+          } else if (Array.isArray(child.props.children)) {
+            // Para arrays de children (múltiplos elementos JSX), junta sem vírgulas
+            childLabel = child.props.children.map(c => {
+              if (typeof c === 'string') return c
+              if (typeof c === 'number') return String(c)
+              return ''
+            }).join('')
+          } else {
+            childLabel = child.props.children?.toString() || ''
+          }
+          
+          items.set(String(childValue), childLabel)
+        } else if (child.props?.children) {
+          if (Array.isArray(child.props.children)) {
+            child.props.children.forEach(processChild)
+          } else {
+            processChild(child.props.children)
+          }
+        }
+      }
+      
+      if (Array.isArray(children)) {
+        children.forEach(processChild)
+      } else {
+        processChild(children)
+      }
+      
+      return items
+    }
+
+    const items = extractItems(children)
+    setItemsMap(items)
+  }, [children])
 
   useEffect(() => {
     if (value !== undefined) {
       setSelectedValue(value)
+      const label = itemsMap.get(String(value)) || ""
+      setSelectedLabel(label)
     }
-  }, [value])
+  }, [value, itemsMap])
 
-  const handleValueChange = (newValue) => {
+  const handleValueChange = (newValue, newLabel) => {
     setSelectedValue(newValue)
+    setSelectedLabel(newLabel || itemsMap.get(String(newValue)) || "")
     setIsOpen(false)
     if (onValueChange) {
       onValueChange(newValue)
@@ -28,8 +80,10 @@ const Select = ({ children, value, onValueChange, disabled }) => {
         isOpen,
         setIsOpen,
         selectedValue,
+        selectedLabel,
         handleValueChange,
         disabled,
+        itemsMap,
       }}
     >
       <div className="relative">{children}</div>
@@ -62,9 +116,9 @@ const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) 
 SelectTrigger.displayName = "SelectTrigger"
 
 const SelectValue = ({ placeholder }) => {
-  const { selectedValue } = React.useContext(SelectContext)
+  const { selectedValue, selectedLabel } = React.useContext(SelectContext)
 
-  return <span className={cn(!selectedValue && "text-muted-foreground")}>{selectedValue || placeholder}</span>
+  return <span className={cn(!selectedValue && "text-muted-foreground")}>{selectedLabel || placeholder}</span>
 }
 
 const SelectContent = React.forwardRef(({ className, children, ...props }, ref) => {
@@ -106,7 +160,35 @@ SelectContent.displayName = "SelectContent"
 
 const SelectItem = React.forwardRef(({ className, children, value, ...props }, ref) => {
   const { selectedValue, handleValueChange } = React.useContext(SelectContext)
-  const isSelected = selectedValue === value
+  const isSelected = String(selectedValue) === String(value)
+  
+  const handleClick = () => {
+    // Extrair texto limpo dos children, sem vírgulas extras
+    let label = ''
+    if (typeof children === 'string') {
+      label = children
+    } else if (Array.isArray(children)) {
+      // Para arrays de children (múltiplos elementos JSX), junta sem vírgulas
+      label = children.map(child => {
+        if (typeof child === 'string') return child
+        if (typeof child === 'number') return String(child)
+        if (React.isValidElement(child)) {
+          // Se é um elemento React, tenta extrair o texto
+          return child.props?.children?.toString() || ''
+        }
+        return child?.toString() || ''
+      }).join('')
+    } else if (React.isValidElement(children)) {
+      label = children.props?.children?.toString() || ''
+    } else {
+      label = children?.toString() || ''
+    }
+    
+    // Remove vírgulas extras e limpa espaços duplos
+    label = label.replace(/\s+/g, ' ').trim()
+    
+    handleValueChange(value, label)
+  }
 
   return (
     <div
@@ -116,7 +198,7 @@ const SelectItem = React.forwardRef(({ className, children, value, ...props }, r
         isSelected && "bg-accent text-accent-foreground",
         className,
       )}
-      onClick={() => handleValueChange(value)}
+      onClick={handleClick}
       {...props}
     >
       <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">

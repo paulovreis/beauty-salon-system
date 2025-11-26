@@ -1,3 +1,6 @@
+import pool from '../db/postgre.js';
+import whatsappService from '../services/whatsappNotificationService.js';
+
 class ServiceController {
   constructor(){}
     async getAllServices(req, res) {
@@ -69,6 +72,24 @@ class ServiceController {
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING *
             `, [name, description, base_cost, recommended_price, duration_minutes, profit_margin, category_id]);
+            
+            // Enviar notificação de novo serviço
+            try {
+                await whatsappService.sendSystemChangeNotification(
+                    'service_created',
+                    {
+                        name,
+                        description,
+                        recommended_price,
+                        duration_minutes,
+                        profit_margin
+                    },
+                    `Serviço: ${name}`
+                );
+            } catch (notificationError) {
+                console.error('Erro ao enviar notificação de novo serviço:', notificationError);
+            }
+            
             res.status(201).json(rows[0]);
         } catch (err) {
             console.log("Erro ao criar serviço:", err);
@@ -92,6 +113,26 @@ class ServiceController {
             if (rows.length === 0) {
                 return res.status(404).json({ message: "Serviço não encontrado" });
             }
+            // Notificar alteração de serviço (não bloqueia resposta em caso de erro)
+            try {
+                const updated = rows[0];
+                await whatsappService.sendSystemChangeNotification(
+                    'service_updated',
+                    {
+                        id: updated.id,
+                        name: updated.name,
+                        description: updated.description,
+                        recommended_price: updated.recommended_price,
+                        duration_minutes: updated.duration_minutes,
+                        profit_margin: updated.profit_margin,
+                        is_active: updated.is_active
+                    },
+                    `Serviço atualizado: ${updated.name}`
+                );
+            } catch (notificationError) {
+                console.error('Erro ao enviar notificação de atualização de serviço:', notificationError);
+            }
+
             res.json(rows[0]);
         } catch (err) {
             console.log("Erro ao atualizar serviço:", err);
@@ -103,12 +144,24 @@ class ServiceController {
         const db = req.pool;
         const { id } = req.params;
         try {
-            const { rowCount } = await db.query(`
+            const { rows, rowCount } = await db.query(`
                 DELETE FROM services 
                 WHERE id = $1
+                RETURNING id, name
             `, [id]);
             if (rowCount === 0) {
                 return res.status(404).json({ message: "Serviço não encontrado" });
+            }
+            // Notificar remoção de serviço
+            try {
+                const removed = rows && rows[0] ? rows[0] : { id };
+                await whatsappService.sendSystemChangeNotification(
+                    'service_deleted',
+                    { id: removed.id, name: removed.name },
+                    `Serviço removido: ${removed.name || removed.id}`
+                );
+            } catch (notificationError) {
+                console.error('Erro ao enviar notificação de remoção de serviço:', notificationError);
             }
             res.json({ message: "Serviço removido com sucesso" });
         } catch (err) {

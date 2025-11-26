@@ -1,5 +1,6 @@
 // controllers/schedulingController.js
 import pool from "../db/postgre.js";
+import whatsappService from "../services/whatsappNotificationService.js";
 
 class SchedulingController {
 	constructor() {}
@@ -55,29 +56,106 @@ class SchedulingController {
 	//     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 	//   );
 
-	// get all schedulings
+	// get all schedulings - Otimizado com paginação e filtros
 	async getAllSchedulings(req, res) {
 		const pool = req.pool;
 		try {
+			const { 
+				page = 1, 
+				limit = 50, 
+				status, 
+				employee_id, 
+				start_date, 
+				end_date,
+				client_search 
+			} = req.query;
+			
+			const offset = (page - 1) * limit;
+			let whereConditions = [];
+			let queryParams = [];
+			let paramIndex = 1;
+
+			if (status) {
+				whereConditions.push(`a.status = $${paramIndex}`);
+				queryParams.push(status);
+				paramIndex++;
+			}
+
+			if (employee_id) {
+				whereConditions.push(`a.employee_id = $${paramIndex}`);
+				queryParams.push(employee_id);
+				paramIndex++;
+			}
+
+			if (start_date) {
+				whereConditions.push(`a.appointment_date >= $${paramIndex}`);
+				queryParams.push(start_date);
+				paramIndex++;
+			}
+
+			if (end_date) {
+				whereConditions.push(`a.appointment_date <= $${paramIndex}`);
+				queryParams.push(end_date);
+				paramIndex++;
+			}
+
+			if (client_search) {
+				whereConditions.push(`c.name ILIKE $${paramIndex}`);
+				queryParams.push(`%${client_search}%`);
+				paramIndex++;
+			}
+
+			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+			// Query principal otimizada usando índices
 			const { rows } = await pool.query(`
-				SELECT a.id,
-					   a.appointment_date,
-					   a.appointment_time,
-					   a.status,
-					   a.duration_minutes,
-					   a.price,
-					   c.name as client_name,
-					   c.phone as client_phone,
-					   e.name as employee_name,
-					   s.name as service_name
-                FROM appointments a
-                JOIN clients c ON a.client_id = c.id
-                JOIN employees e ON a.employee_id = e.id
-                JOIN services s ON a.service_id = s.id
+				SELECT 
+					a.id,
+					a.appointment_date,
+					a.appointment_time,
+					a.status,
+					a.duration_minutes,
+					a.price,
+					a.notes,
+					c.name as client_name,
+					c.phone as client_phone,
+					e.name as employee_name,
+					s.name as service_name,
+					CASE 
+						WHEN a.appointment_date < CURRENT_DATE THEN 'past'
+						WHEN a.appointment_date = CURRENT_DATE THEN 'today'
+						ELSE 'future'
+					END as time_status
+				FROM appointments a
+				JOIN clients c ON a.client_id = c.id
+				JOIN employees e ON a.employee_id = e.id
+				JOIN services s ON a.service_id = s.id
+				${whereClause}
 				ORDER BY a.appointment_date DESC, a.appointment_time DESC
-            `);
-			res.json(rows);
+				LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+			`, [...queryParams, limit, offset]);
+
+			// Count para paginação
+			const { rows: countRows } = await pool.query(`
+				SELECT COUNT(*) as total 
+				FROM appointments a
+				JOIN clients c ON a.client_id = c.id
+				JOIN employees e ON a.employee_id = e.id
+				JOIN services s ON a.service_id = s.id
+				${whereClause}
+			`, queryParams);
+
+			res.json({
+				appointments: rows,
+				pagination: {
+					currentPage: parseInt(page),
+					totalItems: parseInt(countRows[0].total),
+					itemsPerPage: parseInt(limit),
+					totalPages: Math.ceil(countRows[0].total / limit)
+				}
+			});
 		} catch (err) {
+			console.error('Erro ao buscar agendamentos:', err);
 			res
 				.status(500)
 				.json({ message: "Erro ao buscar agendamentos", error: err.message });
@@ -215,7 +293,7 @@ class SchedulingController {
 			const [{rows}, countResult] = await Promise.all([dataPromise, countPromise]);
 			const total = parseInt(countResult.rows[0].count,10) || 0;
 			const hasMore = offset + rows.length < total;
-			res.json({data: rows, limit, offset, total, hasMore});
+			res.json({data: rows, limit, offset, total, hasMore: offset + rows.length < total});
 		}catch(err){
 			res.status(500).json({message:'Erro ao buscar agendamentos futuros', error: err.message});
 		}
@@ -369,6 +447,15 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações WhatsApp após criar o agendamento
+			try {
+				await whatsappService.sendNewAppointmentNotification(rows[0].id);
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de novo agendamento:', notificationError);
+				// Não falha a criação do agendamento se a notificação falhar
+			}
+			
 			res.status(201).json(rows[0]);
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -494,6 +581,87 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações de alteração de agendamento
+			try {
+				// Verificar se houve mudanças significativas que merecem notificação
+				const oldAppointment = oldRows[0];
+				const newAppointment = rows[0];
+				const changes = [];
+				
+				if (oldAppointment.appointment_date !== newAppointment.appointment_date) {
+					changes.push({
+						field: 'Data',
+						oldValue: new Date(oldAppointment.appointment_date).toLocaleDateString('pt-BR'),
+						newValue: new Date(newAppointment.appointment_date).toLocaleDateString('pt-BR')
+					});
+				}
+				
+				if (oldAppointment.appointment_time !== newAppointment.appointment_time) {
+					changes.push({
+						field: 'Horário',
+						oldValue: oldAppointment.appointment_time,
+						newValue: newAppointment.appointment_time
+					});
+				}
+				
+				if (oldAppointment.status !== newAppointment.status) {
+					changes.push({
+						field: 'Status',
+						oldValue: oldAppointment.status,
+						newValue: newAppointment.status
+					});
+				}
+				
+				// Se houve mudanças significativas, enviar notificação
+				if (changes.length > 0) {
+					// Buscar dados completos para notificação
+					const appointmentDetails = await pool.query(`
+						SELECT 
+							a.*,
+							c.name as client_name,
+							c.phone as client_phone,
+							e.id as employee_id,
+							e.name as employee_name,
+							e.phone as employee_phone,
+							s.name as service_name,
+							s.recommended_price as service_price
+						FROM appointments a
+						JOIN clients c ON c.id = a.client_id
+						JOIN employees e ON e.id = a.employee_id
+						JOIN services s ON s.id = a.service_id
+						WHERE a.id = $1
+					`, [id]);
+					
+					if (appointmentDetails.rows.length > 0) {
+						const appointment = appointmentDetails.rows[0];
+						
+						// Notificar funcionário sobre mudanças
+						if (appointment.employee_phone) {
+							const allow = await whatsappService.shouldReceiveNotification(appointment.employee_id, 'appointment_changes');
+							if (allow) {
+								const employeeMessage = whatsappService.createUpdatedAppointmentMessage(
+									{ name: appointment.employee_name },
+									oldAppointment,
+									appointment,
+									changes
+								);
+								await whatsappService.sendMessage(appointment.employee_phone, employeeMessage);
+							}
+						}
+						
+						// Notificar cliente sobre mudanças
+						if (appointment.client_phone) {
+							const clientMessage = whatsappService.createClientAppointmentUpdate(appointment, changes);
+							await whatsappService.sendMessage(appointment.client_phone, clientMessage);
+						}
+					}
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de alteração:', notificationError);
+				// Não falha a atualização se a notificação falhar
+			}
+			
 			res.json(rows[0]);
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -509,16 +677,32 @@ class SchedulingController {
 		const { id } = req.params;
 		try {
 			await pool.query('BEGIN');
-			// Busca o agendamento para liberar o slot
-			const { rows: oldRows } = await pool.query(
-				`SELECT employee_id, appointment_date, appointment_time FROM appointments WHERE id = $1`,
-				[id]
-			);
-			if (oldRows.length === 0) {
+			
+			// Buscar dados completos do agendamento antes de deletar para notificações
+			const { rows: appointmentRows } = await pool.query(`
+				SELECT 
+					a.*,
+					c.name as client_name,
+					c.phone as client_phone,
+					e.id as employee_id,
+					e.name as employee_name,
+					e.phone as employee_phone,
+					s.name as service_name,
+					s.recommended_price as service_price
+				FROM appointments a
+				JOIN clients c ON c.id = a.client_id
+				JOIN employees e ON e.id = a.employee_id
+				JOIN services s ON s.id = a.service_id
+				WHERE a.id = $1
+			`, [id]);
+			
+			if (appointmentRows.length === 0) {
 				await pool.query('ROLLBACK');
 				return res.status(404).json({ message: "Agendamento não encontrado" });
 			}
-			const old = oldRows[0];
+			
+			const appointmentData = appointmentRows[0];
+			const old = appointmentRows[0];
 
 			// Deleta o agendamento
 			const { rowCount } = await pool.query(
@@ -537,6 +721,35 @@ class SchedulingController {
 			);
 
 			await pool.query('COMMIT');
+			
+			// Enviar notificações de cancelamento
+			try {
+				// Notificar funcionário sobre cancelamento
+				if (appointmentData.employee_phone) {
+					const allow = await whatsappService.shouldReceiveNotification(appointmentData.employee_id, 'cancellations');
+					if (allow) {
+						const employeeMessage = whatsappService.createCancelledAppointmentMessage(
+							{ name: appointmentData.employee_name },
+							appointmentData,
+							'Agendamento cancelado pelo sistema'
+						);
+						await whatsappService.sendMessage(appointmentData.employee_phone, employeeMessage);
+					}
+				}
+				
+				// Notificar cliente sobre cancelamento
+				if (appointmentData.client_phone) {
+					const clientMessage = whatsappService.createClientAppointmentCancellation(
+						appointmentData,
+						'Agendamento cancelado pelo sistema'
+					);
+					await whatsappService.sendMessage(appointmentData.client_phone, clientMessage);
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de cancelamento:', notificationError);
+				// Não falha o cancelamento se a notificação falhar
+			}
+			
 			res.status(204).send();
 		} catch (err) {
 			await pool.query('ROLLBACK').catch(() => {});
@@ -550,12 +763,80 @@ class SchedulingController {
 	async getAvailableTimeSlots(req, res) {
 		const pool = req.pool;
 		const { employeeId, date } = req.params;
+		const { serviceId, excludeAppointmentId } = req.query;
+		
 		try {
-			const { rows } = await pool.query(
-				`SELECT id, employee_id, date, start_time, end_time, is_available FROM time_slots WHERE employee_id = $1 AND date = $2 AND is_available = TRUE ORDER BY start_time ASC`,
-				[employeeId, date]
-			);
-			res.json(rows);
+			// Buscar duração do serviço se fornecido
+			let serviceDuration = 30; // padrão
+			if (serviceId) {
+				const serviceResult = await pool.query(
+					`SELECT duration_minutes FROM services WHERE id = $1`,
+					[serviceId]
+				);
+				if (serviceResult.rows.length > 0) {
+					serviceDuration = serviceResult.rows[0].duration_minutes;
+				}
+			}
+
+			// Buscar agendamentos existentes para o funcionário na data (excluindo o próprio se em edição)
+			let existingQuery = `
+				SELECT appointment_time, duration_minutes 
+				FROM appointments 
+				WHERE employee_id = $1 AND appointment_date = $2 AND status != 'canceled'
+			`;
+			let queryParams = [employeeId, date];
+
+			if (excludeAppointmentId) {
+				existingQuery += ` AND id != $3`;
+				queryParams.push(excludeAppointmentId);
+			}
+
+			const { rows: existingAppointments } = await pool.query(existingQuery, queryParams);
+
+			// Gerar slots de 30 minutos das 08:00 às 18:00
+			const slots = [];
+			for (let hour = 8; hour < 18; hour++) {
+				for (let minute = 0; minute < 60; minute += 30) {
+					const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+					
+					// Calcular se o serviço cabe neste slot
+					const slotStartMinutes = this.timeToMinutes(timeStr);
+					const serviceEndMinutes = slotStartMinutes + serviceDuration;
+					
+					// Verificar se o serviço se estende além do horário de funcionamento (18:00)
+					if (serviceEndMinutes > this.timeToMinutes('18:00')) {
+						continue; // Não adicionar este slot se o serviço não cabe
+					}
+					
+					// Verificar se há conflito com agendamentos existentes
+					const hasConflict = existingAppointments.some(apt => {
+						if (!apt.appointment_time) return false;
+						
+						const aptStartMinutes = this.timeToMinutes(apt.appointment_time.slice(0, 5));
+						const aptEndMinutes = aptStartMinutes + (apt.duration_minutes || 30);
+						
+						// Verifica sobreposição entre o novo serviço e o agendamento existente
+						return !(serviceEndMinutes <= aptStartMinutes || slotStartMinutes >= aptEndMinutes);
+					});
+
+					if (!hasConflict) {
+						const endHour = minute === 30 ? hour + 1 : hour;
+						const endMinute = minute === 30 ? 0 : minute + 30;
+						const endTimeStr = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+						
+						slots.push({
+							id: `dynamic-${hour}-${minute}`,
+							employee_id: employeeId,
+							date: date,
+							start_time: timeStr,
+							end_time: endTimeStr,
+							is_available: true
+						});
+					}
+				}
+			}
+
+			res.json(slots);
 		} catch (err) {
 			res
 				.status(500)
@@ -566,13 +847,21 @@ class SchedulingController {
 		}
 	}
 
+	// Método auxiliar para converter horário em minutos
+	timeToMinutes(timeStr) {
+		const [hours, minutes] = timeStr.split(':').map(Number);
+		return hours * 60 + minutes;
+	}
+
 	async transitionStatus(req,res,newStatus){
 		const pool = req.pool;
 		const { id } = req.params;
+		// Permite detalhes de pagamento ao completar
+		const { payment_method, amount, notes } = req.body || {};
 		try {
 			await pool.query('BEGIN');
 			// Busca o agendamento atual
-			const current = await pool.query(`SELECT id, client_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
+			const current = await pool.query(`SELECT id, client_id, employee_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
 			if(!current.rows.length){
 				await pool.query('ROLLBACK');
 				return res.status(404).json({message:'Agendamento não encontrado'});
@@ -583,12 +872,36 @@ class SchedulingController {
 			// Ajusta métricas básicas de cliente quando completa ou cancela
 			if(appt.status !== 'completed' && newStatus === 'completed'){
 				await pool.query(`UPDATE clients SET total_visits = total_visits + 1, total_spent = total_spent + $2, last_visit = CURRENT_DATE WHERE id = $1`,[appt.client_id, appt.price]);
+				// Registrar pagamento do serviço, se método fornecido (ou default)
+				const method = (payment_method || '').toLowerCase().trim();
+				const allowed = ['cash','credit','debit','pix','transfer','boleto'];
+				const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : 'cash');
+				const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
+				await pool.query(
+					`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes) VALUES ($1,$2,$3,$4)`,
+					[id, paidAmount, chosenMethod, notes || null]
+				);
 			}
 			if(appt.status === 'completed' && newStatus === 'canceled'){
 				// Reverte visita/gasto se estava marcado como completed antes
 				await pool.query(`UPDATE clients SET total_visits = GREATEST(total_visits - 1,0), total_spent = GREATEST(total_spent - $2,0) WHERE id = $1`,[appt.client_id, appt.price]);
 			}
 			await pool.query('COMMIT');
+			
+			// Enviar notificações WhatsApp para mudança de status
+			try {
+				if (newStatus === 'confirmed') {
+					await whatsappService.sendAppointmentConfirmationNotification(id);
+				} else if (newStatus === 'completed') {
+					await whatsappService.sendAppointmentCompletionNotification(id);
+				} else if (newStatus === 'canceled') {
+					await whatsappService.sendSimpleCancellationNotification(id, 'Status alterado para cancelado');
+				}
+			} catch (notificationError) {
+				console.error('Erro ao enviar notificação de mudança de status:', notificationError);
+				// Não falha a atualização se a notificação falhar
+			}
+			
 			res.json(updated.rows[0]);
 		}catch(err){
 			await pool.query('ROLLBACK').catch(()=>{});

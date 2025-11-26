@@ -1,19 +1,80 @@
+import pool from "../db/postgre.js";
+import whatsappService from "../services/whatsappNotificationService.js";
+
 class ProductController {
   constructor() {}
 
   async getAllProducts(req, res) {
     const db = req.pool;
     try {
+      const { page = 1, limit = 50, category_id, search, include_inactive } = req.query;
+      const offset = (page - 1) * limit;
+      
+      let whereConditions = [];
+      let queryParams = [];
+      let paramIndex = 1;
+
+      // Filtro de status ativo (padrão)
+      if (include_inactive !== 'true') {
+        whereConditions.push(`p.is_active = true`);
+      }
+
+      if (category_id) {
+        whereConditions.push(`p.category_id = $${paramIndex}`);
+        queryParams.push(category_id);
+        paramIndex++;
+      }
+
+      if (search) {
+        whereConditions.push(`(p.name ILIKE $${paramIndex} OR p.sku ILIKE $${paramIndex})`);
+        queryParams.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+      // Query otimizada com informações adicionais
       const { rows } = await db.query(`
-                SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
-                       p.last_restocked, p.is_active, p.created_at, p.updated_at, 
-                       c.name as category_name
-                FROM products p
-                LEFT JOIN product_categories c ON p.category_id = c.id
-                ORDER BY p.name
-            `);
-      res.json(rows);
+        SELECT 
+          p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
+          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+          p.last_restocked, p.is_active, p.created_at, p.updated_at,
+          c.name as category_name,
+          CASE 
+            WHEN p.current_stock = 0 THEN 'out_of_stock'
+            WHEN p.current_stock <= p.min_stock_level THEN 'low_stock'
+            WHEN p.current_stock >= p.max_stock_level THEN 'overstock'
+            ELSE 'normal'
+          END as stock_status,
+          (p.selling_price - p.cost_price) as profit_margin_value,
+          CASE 
+            WHEN p.cost_price > 0 THEN ROUND(((p.selling_price - p.cost_price) / p.cost_price * 100)::numeric, 2)
+            ELSE 0
+          END as profit_percentage
+        FROM products p
+        LEFT JOIN product_categories c ON p.category_id = c.id
+        ${whereClause}
+        ORDER BY p.name
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `, [...queryParams, limit, offset]);
+
+      // Count para paginação
+      const { rows: countRows } = await db.query(`
+        SELECT COUNT(*) as total 
+        FROM products p 
+        LEFT JOIN product_categories c ON p.category_id = c.id
+        ${whereClause}
+      `, queryParams);
+
+      res.json({
+        products: rows,
+        pagination: {
+          currentPage: parseInt(page),
+          totalItems: parseInt(countRows[0].total),
+          itemsPerPage: parseInt(limit),
+          totalPages: Math.ceil(countRows[0].total / limit)
+        }
+      });
     } catch (err) {
       console.log("Erro ao buscar produtos:", err);
       res
@@ -95,6 +156,24 @@ class ProductController {
           category_id,
         ]
       );
+      
+      // Enviar notificação de novo produto
+      try {
+        await whatsappService.sendSystemChangeNotification(
+          'product_created',
+          {
+            name,
+            description,
+            selling_price,
+            current_stock,
+            category_id
+          },
+          `Produto: ${name}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de novo produto:', notificationError);
+      }
+      
       res.status(201).json(rows[0]);
     } catch (err) {
       console.log("Erro ao criar produto:", err);
@@ -183,6 +262,35 @@ class ProductController {
           id,
         ]
       );
+
+      // Verificar se houve mudança no estoque e se está baixo
+      const oldStock = current.rows[0].current_stock;
+      const newStock = rows[0].current_stock;
+      const minStock = rows[0].min_stock_level;
+
+      if (oldStock !== newStock) {
+        // Notificar sobre alteração de estoque
+        try {
+          await whatsappService.sendSystemChangeNotification(
+            'inventory_update',
+            {
+              name: rows[0].name,
+              old_stock: oldStock,
+              new_stock: newStock,
+              difference: newStock - oldStock
+            },
+            `Produto: ${rows[0].name}`
+          );
+
+          // Se o estoque ficou baixo, enviar alerta específico
+          if (newStock <= minStock && minStock > 0) {
+            await whatsappService.sendLowStockNotification([rows[0]]);
+          }
+        } catch (notificationError) {
+          console.error('Erro ao enviar notificação de atualização:', notificationError);
+        }
+      }
+
       res.json(rows[0]);
     } catch (err) {
       console.log("Erro ao atualizar produto:", err);
@@ -279,11 +387,44 @@ class ProductController {
         "INSERT INTO stock_movements (product_id, movement_type, quantity, unit_cost, reference_type, notes) VALUES ($1, $2, $3, $4, $5, $6)",
         [id, "restock", quantity, unit_cost || null, "manual", notes || null]
       );
+      
+      // Enviar notificação de reposição de estoque
+      try {
+        await whatsappService.sendSystemChangeNotification(
+          'inventory_restock',
+          {
+            name: rows[0].name,
+            quantity: `+${quantity}`,
+            current_stock: rows[0].current_stock,
+            notes
+          },
+          `Produto: ${rows[0].name}`
+        );
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação de reposição:', notificationError);
+      }
+      
       res.json(rows[0]);
     } catch (err) {
       res
         .status(500)
         .json({ message: "Erro ao repor estoque", error: err.message });
+    }
+  }
+
+  // Verificar e notificar sobre estoque baixo
+  async checkLowStockAndNotify(db = null) {
+    const database = db || pool;
+    try {
+      const { rows } = await database.query(
+        "SELECT * FROM products WHERE current_stock <= min_stock_level AND is_active = true ORDER BY current_stock ASC"
+      );
+      
+      if (rows.length > 0) {
+        await whatsappService.sendLowStockNotification(rows);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar estoque baixo:', error);
     }
   }
 

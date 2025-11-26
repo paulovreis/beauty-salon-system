@@ -27,68 +27,61 @@ export default function Inventory() {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [itemToDelete, setItemToDelete] = useState(null)
+  const [showRestockDialog, setShowRestockDialog] = useState(false)
+  const [restockItem, setRestockItem] = useState(null)
+  const [restockQuantity, setRestockQuantity] = useState(1)
+  const [restockNotes, setRestockNotes] = useState("")
+  const [restockLoading, setRestockLoading] = useState(false)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        // Buscar produtos via productController
-        const productsRes = await axiosWithAuth("/products");
-        const categoriesRes = await axiosWithAuth("/products/categories");
-        
-        setCategories(categoriesRes.data);
-        
-        // Mapeia os produtos do productController para o formato do inventory
-        const mapped = productsRes.data.map((item) => ({
-          id: item.id,
-          name: item.name,
-          category: item.category_name || "",
-          currentStock: item.current_stock || 0,
-          minStock: item.min_stock_level || 0,
-          maxStock: item.max_stock_level || 0,
-          cost: item.cost_price || 0,
-          sellingPrice: item.selling_price || 0,
-          supplier: item.supplier_name || "",
-          sku: item.sku || "",
-          description: item.description || "",
-          lastRestocked: item.last_restocked,
-          lastSold: item.last_sold,
-          daysSinceLastSale: item.days_since_last_sale || 0,
-          monthlyUsage: item.monthly_usage || 0,
-          status: getStatus(item),
-        }));
-        setInventory(mapped);
-      } catch (err) {
-        setError("Erro ao buscar dados: " + (err.message || ""));
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-    // eslint-disable-next-line
-  }, []);
+  const loadData = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      // Buscar produtos via inventoryController
+      const inventoryRes = await axiosWithAuth("/inventory");
+      const categoriesRes = await axiosWithAuth("/products/categories");
 
-  // Função para determinar status do produto
-  function getStatus(item) {
-    if (item.current_stock === 0) return "out_of_stock";
-    if (item.current_stock <= item.min_stock_level) return "low_stock";
-    if (item.days_since_last_sale > 14) return "slow_moving";
-    return "in_stock";
+      setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : []);
+
+      // Mapeia os produtos do inventoryController para o formato do inventory
+      // O inventoryController retorna { products: [...], pagination: {...} }
+      const inventoryData = inventoryRes.data?.products || [];
+      const productsData = Array.isArray(inventoryData) ? inventoryData : [];
+      const mapped = productsData.map((item) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category_name || "",
+        currentStock: item.current_stock || 0,
+        minStock: item.min_stock_level || 0,
+        maxStock: item.max_stock_level || 0,
+        cost: item.cost_price || 0,
+        sellingPrice: item.selling_price || 0,
+        supplier: item.supplier_name || "",
+        sku: item.sku || "",
+        description: item.description || "",
+        lastRestocked: item.last_restocked,
+        lastSold: item.last_sold,
+        daysSinceLastSale: item.days_since_last_sale || 0,
+        monthlyUsage: item.monthly_usage || 0,
+        status: (() => {
+          if ((item.current_stock || 0) === 0) return 'out_of_stock'
+          if ((item.current_stock || 0) <= (item.min_stock_level || 0)) return 'low_stock'
+          return 'in_stock'
+        })(),
+      }))
+
+      setInventory(mapped);
+    } catch (err) {
+      console.error('Erro ao carregar inventário', err);
+      setError('Não foi possível carregar o inventário');
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const [newItem, setNewItem] = useState({
-    name: "",
-    category_id: "",
-    currentStock: "",
-    minStock: "",
-    maxStock: "",
-    cost: "",
-    sellingPrice: "",
-    supplier: "",
-    sku: "",
-    description: "",
-  })
+  useEffect(() => {
+    loadData();
+  }, [])
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -130,6 +123,19 @@ export default function Inventory() {
     }
     return null
   }
+
+  const [newItem, setNewItem] = useState({
+    name: "",
+    category_id: "",
+    currentStock: "",
+    minStock: "",
+    maxStock: "",
+    cost: "",
+    sellingPrice: "",
+    supplier: "",
+    sku: "",
+    description: "",
+  })
 
   const handleAddItem = async () => {
     // Validação mais específica
@@ -207,7 +213,7 @@ export default function Inventory() {
           lastSold: item.last_sold,
           daysSinceLastSale: item.days_since_last_sale || 0,
           monthlyUsage: item.monthly_usage || 0,
-          status: getStatus(item),
+          status: item.current_stock === 0 ? 'out_of_stock' : item.current_stock <= item.min_stock_level ? 'low_stock' : 'in_stock',
         },
       ]);
       
@@ -304,7 +310,7 @@ export default function Inventory() {
               lastSold: updatedItem.last_sold,
               daysSinceLastSale: updatedItem.days_since_last_sale || 0,
               monthlyUsage: updatedItem.monthly_usage || 0,
-              status: getStatus(updatedItem),
+              status: updatedItem.current_stock === 0 ? 'out_of_stock' : updatedItem.current_stock <= updatedItem.min_stock_level ? 'low_stock' : 'in_stock',
             }
           : item
       ))
@@ -338,6 +344,42 @@ export default function Inventory() {
       console.error("Erro ao excluir produto:", err)
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
       setError("Erro ao excluir produto: " + errorMsg)
+    }
+  }
+
+  const handleOpenRestock = (item) => {
+    setRestockItem(item)
+    setRestockQuantity(1)
+    setRestockNotes("")
+    setShowRestockDialog(true)
+  }
+
+  const handleConfirmRestock = async () => {
+    if (!restockItem || restockQuantity <= 0) {
+      setError("Quantidade deve ser maior que zero")
+      return
+    }
+
+    setRestockLoading(true)
+    try {
+      await axiosWithAuth(`/inventory/${restockItem.id}/restock`, {
+        method: "post",
+        data: {
+          quantity: Number(restockQuantity),
+          notes: restockNotes.trim() || undefined,
+        },
+      })
+
+      // Reload list after successful restock
+      await loadData()
+      setShowRestockDialog(false)
+      setRestockItem(null)
+    } catch (err) {
+      console.error("Erro ao reabastecer produto:", err)
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
+      setError("Erro ao reabastecer produto: " + errorMsg)
+    } finally {
+      setRestockLoading(false)
     }
   }
 
@@ -567,7 +609,8 @@ export default function Inventory() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {inventory.map((item) => {
           const promotion = getPromotionSuggestion(item)
-          const stockPercentage = (item.currentStock / item.maxStock) * 100
+          const max = Number(item.maxStock) || 0;
+          const stockPercentage = max > 0 ? (Number(item.currentStock) / max) * 100 : 0
 
           return (
             <Card key={item.id} className={item.status === "out_of_stock" ? "border-red-200" : ""}>
@@ -629,6 +672,10 @@ export default function Inventory() {
                 )}
 
                 <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => handleOpenRestock(item)}>
+                    <Package className="h-3 w-3 mr-1" />
+                    Reabastecer
+                  </Button>
                   <Button variant="outline" size="sm" className="flex-1 bg-transparent" onClick={() => handleEditItem(item)}>
                     <Edit className="h-3 w-3 mr-1" />
                     Editar
@@ -814,6 +861,47 @@ export default function Inventory() {
             <Button variant="destructive" onClick={confirmDelete}>
               Excluir
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Reabastecimento */}
+      <Dialog open={showRestockDialog} onOpenChange={setShowRestockDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reabastecer Produto</DialogTitle>
+            <DialogDescription>
+              Adicione estoque ao produto "{restockItem?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="restockQuantity">Quantidade</Label>
+              <Input
+                id="restockQuantity"
+                type="number"
+                min="1"
+                value={restockQuantity}
+                onChange={(e) => setRestockQuantity(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="restockNotes">Observações (Opcional)</Label>
+              <Input
+                id="restockNotes"
+                value={restockNotes}
+                onChange={(e) => setRestockNotes(e.target.value)}
+                placeholder="Ex: Nota fiscal 123456"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowRestockDialog(false)} disabled={restockLoading}>
+                Cancelar
+              </Button>
+              <Button onClick={handleConfirmRestock} disabled={restockLoading}>
+                {restockLoading ? "Processando..." : "Confirmar"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
