@@ -621,6 +621,7 @@ class SchedulingController {
 							a.*,
 							c.name as client_name,
 							c.phone as client_phone,
+							e.id as employee_id,
 							e.name as employee_name,
 							e.phone as employee_phone,
 							s.name as service_name,
@@ -637,13 +638,16 @@ class SchedulingController {
 						
 						// Notificar funcionário sobre mudanças
 						if (appointment.employee_phone) {
-							const employeeMessage = whatsappService.createUpdatedAppointmentMessage(
-								{ name: appointment.employee_name },
-								oldAppointment,
-								appointment,
-								changes
-							);
-							await whatsappService.sendMessage(appointment.employee_phone, employeeMessage);
+							const allow = await whatsappService.shouldReceiveNotification(appointment.employee_id, 'appointment_changes');
+							if (allow) {
+								const employeeMessage = whatsappService.createUpdatedAppointmentMessage(
+									{ name: appointment.employee_name },
+									oldAppointment,
+									appointment,
+									changes
+								);
+								await whatsappService.sendMessage(appointment.employee_phone, employeeMessage);
+							}
 						}
 						
 						// Notificar cliente sobre mudanças
@@ -680,6 +684,7 @@ class SchedulingController {
 					a.*,
 					c.name as client_name,
 					c.phone as client_phone,
+					e.id as employee_id,
 					e.name as employee_name,
 					e.phone as employee_phone,
 					s.name as service_name,
@@ -721,12 +726,15 @@ class SchedulingController {
 			try {
 				// Notificar funcionário sobre cancelamento
 				if (appointmentData.employee_phone) {
-					const employeeMessage = whatsappService.createCancelledAppointmentMessage(
-						{ name: appointmentData.employee_name },
-						appointmentData,
-						'Agendamento cancelado pelo sistema'
-					);
-					await whatsappService.sendMessage(appointmentData.employee_phone, employeeMessage);
+					const allow = await whatsappService.shouldReceiveNotification(appointmentData.employee_id, 'cancellations');
+					if (allow) {
+						const employeeMessage = whatsappService.createCancelledAppointmentMessage(
+							{ name: appointmentData.employee_name },
+							appointmentData,
+							'Agendamento cancelado pelo sistema'
+						);
+						await whatsappService.sendMessage(appointmentData.employee_phone, employeeMessage);
+					}
 				}
 				
 				// Notificar cliente sobre cancelamento

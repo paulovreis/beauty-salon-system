@@ -588,7 +588,7 @@ class WhatsAppNotificationService {
       const appointmentQuery = `
         SELECT a.*, c.name as client_name, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -601,13 +601,16 @@ class WhatsAppNotificationService {
       
       const appointment = result.rows[0];
       
-      // Notificar funcionário
+      // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
-        const employeeMessage = this.createNewAppointmentMessage(
-          { name: appointment.employee_name }, 
-          appointment
-        );
-        await this.sendMessage(appointment.employee_phone, employeeMessage);
+        const allow = await this.shouldReceiveNotification(appointment.employee_id, 'new_appointments');
+        if (allow) {
+          const employeeMessage = this.createNewAppointmentMessage(
+            { name: appointment.employee_name }, 
+            appointment
+          );
+          await this.sendMessage(appointment.employee_phone, employeeMessage);
+        }
       }
       
       // Notificar cliente
@@ -757,7 +760,7 @@ class WhatsAppNotificationService {
       const appointmentQuery = `
         SELECT a.*, c.name as client_name, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -770,10 +773,13 @@ class WhatsAppNotificationService {
       
       const appointment = result.rows[0];
       
-      // Notificar funcionário
+      // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
-        const employeeMessage = this.createConfirmedAppointmentMessage(appointment, 'employee');
-        await this.sendMessage(appointment.employee_phone, employeeMessage);
+        const allow = await this.shouldReceiveNotification(appointment.employee_id, 'confirmations');
+        if (allow) {
+          const employeeMessage = this.createConfirmedAppointmentMessage(appointment, 'employee');
+          await this.sendMessage(appointment.employee_phone, employeeMessage);
+        }
       }
       
       // Notificar cliente
@@ -792,7 +798,7 @@ class WhatsAppNotificationService {
       const appointmentQuery = `
         SELECT a.*, c.name as client_name, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -805,10 +811,13 @@ class WhatsAppNotificationService {
       
       const appointment = result.rows[0];
       
-      // Notificar funcionário
+      // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
-        const employeeMessage = this.createCompletedAppointmentMessage(appointment, 'employee');
-        await this.sendMessage(appointment.employee_phone, employeeMessage);
+        const allow = await this.shouldReceiveNotification(appointment.employee_id, 'completions');
+        if (allow) {
+          const employeeMessage = this.createCompletedAppointmentMessage(appointment, 'employee');
+          await this.sendMessage(appointment.employee_phone, employeeMessage);
+        }
       }
       
       // Notificar cliente
@@ -827,7 +836,7 @@ class WhatsAppNotificationService {
       const appointmentQuery = `
         SELECT a.*, c.name as client_name, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -840,14 +849,17 @@ class WhatsAppNotificationService {
       
       const appointment = result.rows[0];
       
-      // Notificar funcionário
+      // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
-        const employeeMessage = this.createCancelledAppointmentMessage(
-          { name: appointment.employee_name }, 
-          appointment, 
-          reason
-        );
-        await this.sendMessage(appointment.employee_phone, employeeMessage);
+        const allow = await this.shouldReceiveNotification(appointment.employee_id, 'cancellations');
+        if (allow) {
+          const employeeMessage = this.createCancelledAppointmentMessage(
+            { name: appointment.employee_name }, 
+            appointment, 
+            reason
+          );
+          await this.sendMessage(appointment.employee_phone, employeeMessage);
+        }
       }
       
       // Notificar cliente
@@ -1015,10 +1027,16 @@ Volte sempre! 😊✨`;
         SELECT e.id, e.name, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
+        LEFT JOIN employee_notifications en ON en.employee_id = e.id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
         AND e.phone IS NOT NULL 
         AND e.phone != ''
+        AND COALESCE(en.enabled, true) = true
+        AND (
+          en.notification_types IS NULL 
+          OR en.notification_types @> '["daily_analysis"]'::jsonb
+        )
       `;
       
       const managersResult = await pool.query(managersQuery);
