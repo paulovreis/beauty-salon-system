@@ -260,8 +260,9 @@ export default function Scheduling() {
   }
 
   const getAvailableEmployees = (serviceId) => {
-    // If using specialties table would filter by serviceId; for now return all employees
-    return employees
+    if (!serviceId) return employees
+    const sid = Number(serviceId)
+    return employees.filter(e => Array.isArray(e.specialties) && e.specialties.some(sp => Number(sp.service_id) === sid))
   }
 
   const getServiceDetails = (serviceId) => services.find((s) => String(s.id) === String(serviceId))
@@ -295,12 +296,14 @@ export default function Scheduling() {
         clientPhone: a.client_phone || '',
         service: a.service_name,
         employee: a.employee_name,
+        employeeId: a.employee_id,
         date: (a.appointment_date||'').slice(0,10),
         time: a.appointment_time?.slice(0,5),
         duration: a.duration_minutes,
         price: Number(a.price || 0),
         status: a.status,
         notes: a.notes || '',
+        commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
       setAppointments(mapped)
       setNewAppointment({ clientName: "", clientPhone: "", serviceId: "", employeeId: "", date: "", time: "", notes: "" })
@@ -397,8 +400,19 @@ export default function Scheduling() {
       const d = editing.date;
       const data = await SchedulingApi.getByDate(d)
       const mapped = (data || []).map(a=>({
-        id:a.id, clientName:a.client_name, clientPhone:a.client_phone||'', service:a.service_name, employee:a.employee_name,
-        date:a.appointment_date, time:a.appointment_time?.slice(0,5), duration:a.duration_minutes, price:Number(a.price||0), status:a.status, notes:a.notes||''
+        id:a.id,
+        clientName:a.client_name,
+        clientPhone:a.client_phone||'',
+        service:a.service_name,
+        employee:a.employee_name,
+        employeeId: a.employee_id,
+        date:a.appointment_date,
+        time:a.appointment_time?.slice(0,5),
+        duration:a.duration_minutes,
+        price:Number(a.price||0),
+        status:a.status,
+        notes:a.notes||'',
+        commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
       setAppointments(mapped)
       await Promise.all([loadNextFive(), loadUpcoming(true)])
@@ -472,12 +486,14 @@ export default function Scheduling() {
         clientPhone: a.client_phone || '',
         service: a.service_name,
         employee: a.employee_name,
+        employeeId: a.employee_id,
         date: (a.appointment_date||'').slice(0,10),
         time: a.appointment_time?.slice(0,5),
         duration: a.duration_minutes,
         price: Number(a.price || 0),
         status: a.status,
         notes: a.notes || '',
+        commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
       setAppointments(mapped)
       await Promise.all([loadNextFive(), loadUpcoming(true)])
@@ -897,16 +913,19 @@ export default function Scheduling() {
                 (apt.employeeId != null ? apt.employeeId === employee.id : apt.employee === employee.name)
               ))
 
-              // Agendamentos considerados carga de trabalho (ainda a realizar)
-              const workloadStatuses = ['scheduled','confirmed','in_progress']
-              const workloadAppointments = employeeAppointments.filter(a => workloadStatuses.includes(a.status))
+              // Contagem de agendamentos ativos (em andamento/por realizar)
+              const activeStatuses = ['scheduled','confirmed','in_progress']
+              const activeAppointments = employeeAppointments.filter(a => activeStatuses.includes(a.status))
 
               // Receita apenas de serviços concluídos
               const revenueAppointments = employeeAppointments.filter(a => a.status === 'completed')
               const totalRevenue = revenueAppointments.reduce((sum, apt) => sum + (apt.price || 0), 0)
 
-              // Duração total (minutos) apenas do que ainda vai acontecer hoje
-              const totalDuration = workloadAppointments.reduce((sum, apt) => sum + (apt.duration || 0), 0)
+              // Duração total (minutos) de contribuicao do dia: inclui concluídos
+              const countedStatuses = ['scheduled','confirmed','in_progress','completed']
+              const totalDuration = employeeAppointments
+                .filter(a => countedStatuses.includes(a.status))
+                .reduce((sum, apt) => sum + (apt.duration || 0), 0)
 
               // Comissão: usar commissionAmount quando existir, senão fallback para 20% do preço
               const totalCommission = revenueAppointments.reduce((sum, apt) => sum + (apt.commissionAmount != null ? apt.commissionAmount : (apt.price || 0) * 0.2), 0)
@@ -921,7 +940,7 @@ export default function Scheduling() {
                     </Avatar>
                     <div>
                       <div className="font-medium">{employee.name}</div>
-                      <div className="text-xs text-muted-foreground">{workloadAppointments.length} agendamentos ativos</div>
+                      <div className="text-xs text-muted-foreground">{activeAppointments.length} agendamentos ativos</div>
                     </div>
                   </div>
                   <div className="space-y-2 text-sm">
@@ -1058,7 +1077,7 @@ export default function Scheduling() {
                       <SelectValue placeholder="Funcionário" />
                     </SelectTrigger>
                     <SelectContent>
-                      {employees.map(emp=> (
+                      {editing.serviceId && getAvailableEmployees(editing.serviceId).map(emp=> (
                         <SelectItem key={emp.id} value={String(emp.id)}>{emp.name}</SelectItem>
                       ))}
                     </SelectContent>
