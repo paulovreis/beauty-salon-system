@@ -173,6 +173,19 @@ export default function Analytics() {
     }
   };
 
+  const translateWeekday = (day) => {
+    const mapping = {
+      'Sunday': 'Domingo',
+      'Monday': 'Segunda-feira',
+      'Tuesday': 'Terça-feira',
+      'Wednesday': 'Quarta-feira',
+      'Thursday': 'Quinta-feira',
+      'Friday': 'Sexta-feira',
+      'Saturday': 'Sábado'
+    };
+    return mapping[day] || day;
+  }
+
   useEffect(() => {
     fetchAnalyticsData();
   }, []);
@@ -272,7 +285,7 @@ export default function Analytics() {
 
   const dayOrder = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
   const weeklyPerformanceData = (data.services?.weeklyPerformance || []).map(item => ({
-    day: item.day_name?.trim(),
+    day: translateWeekday(item.day_name?.trim()),
     appointments: Number(item.appointments_count || 0),
     revenue: Number(item.revenue || 0)
   })).sort((a,b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));

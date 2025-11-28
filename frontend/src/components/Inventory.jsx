@@ -386,6 +386,12 @@ export default function Inventory() {
   const lowStockItems = inventory.filter((item) => item.status === "low_stock" || item.status === "out_of_stock")
   const slowMovingItems = inventory.filter((item) => item.daysSinceLastSale > 14)
 
+  const maskLastRestocked = (dateStr) => {
+    if (!dateStr) return "Nunca"
+    const date = new Date(dateStr)
+    return date.toLocaleDateString()
+  }
+
   return (
     <div className="space-y-6">
       {loading && (
@@ -659,7 +665,7 @@ export default function Inventory() {
 
                 <div className="text-xs text-muted-foreground">
                   <p>Fornecedor: {item.supplier}</p>
-                  <p>Último Reabastecimento: {item.lastRestocked}</p>
+                  <p>Último Reabastecimento: {maskLastRestocked(item.lastRestocked)}</p>
                 </div>
 
                 {promotion && (
