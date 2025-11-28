@@ -38,7 +38,31 @@ class InventoryController {
             WHEN p.current_stock >= p.max_stock_level THEN 'overstock'
             ELSE 'normal'
           END as stock_status,
-          (p.selling_price - p.cost_price) as profit_per_unit
+          (p.selling_price - p.cost_price) as profit_per_unit,
+          -- última saída registrada (em horário de São Paulo)
+          (
+            SELECT MAX(sm.created_at AT TIME ZONE 'America/Sao_Paulo') 
+            FROM stock_movements sm 
+            WHERE sm.product_id = p.id AND sm.movement_type = 'output'
+          ) AS last_sold,
+          -- dias desde a última saída (diferença de datas, desconsiderando horas)
+          COALESCE(
+            CAST(
+              (DATE(NOW() AT TIME ZONE 'America/Sao_Paulo') - DATE((
+                SELECT MAX(sm.created_at AT TIME ZONE 'America/Sao_Paulo') 
+                FROM stock_movements sm 
+                WHERE sm.product_id = p.id AND sm.movement_type = 'output'
+              ))) AS INTEGER
+            ), 0
+          ) AS days_since_last_sale,
+          -- quantidade total saída nos últimos 30 dias (uso mensal)
+          (
+            SELECT COALESCE(SUM(sm.quantity), 0)
+            FROM stock_movements sm
+            WHERE sm.product_id = p.id 
+              AND sm.movement_type = 'output'
+              AND sm.created_at >= NOW() - INTERVAL '30 days'
+          ) AS monthly_usage
         FROM products p
         LEFT JOIN product_categories c ON p.category_id = c.id
         ${whereClause}

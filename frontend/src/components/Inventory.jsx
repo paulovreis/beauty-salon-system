@@ -64,9 +64,15 @@ export default function Inventory() {
         daysSinceLastSale: item.days_since_last_sale || 0,
         monthlyUsage: item.monthly_usage || 0,
         status: (() => {
-          if ((item.current_stock || 0) === 0) return 'out_of_stock'
-          if ((item.current_stock || 0) <= (item.min_stock_level || 0)) return 'low_stock'
-          return 'in_stock'
+          const stock = Number(item.current_stock) || 0;
+          const min = Number(item.min_stock_level) || 0;
+          const days = Number(item.days_since_last_sale) || 0;
+          const usage = Number(item.monthly_usage) || 0;
+          if (stock === 0) return 'out_of_stock';
+          if (stock <= min) return 'low_stock';
+          // Pouca saída: estoque acima do mínimo E (sem venda há 15+ dias OU uso mensal ≤ 1)
+          if (stock > min && (days >= 15 || usage <= 1)) return 'slow_moving';
+          return 'in_stock';
         })(),
       }))
 
@@ -384,7 +390,7 @@ export default function Inventory() {
   }
 
   const lowStockItems = inventory.filter((item) => item.status === "low_stock" || item.status === "out_of_stock")
-  const slowMovingItems = inventory.filter((item) => item.daysSinceLastSale > 14)
+  const slowMovingItems = inventory.filter((item) => item.status === 'slow_moving')
 
   const maskLastRestocked = (dateStr) => {
     if (!dateStr) return "Nunca"
@@ -655,7 +661,7 @@ export default function Inventory() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Última Venda:</span>
-                    <p className="font-medium">{item.daysSinceLastSale}d atrás</p>
+                    <p className="font-medium">{item.lastSold ? `${item.daysSinceLastSale}d atrás` : 'Nunca'}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Uso Mensal:</span>
