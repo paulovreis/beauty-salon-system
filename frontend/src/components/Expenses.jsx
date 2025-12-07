@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Alert, AlertDescription } from './ui/alert';
 import { Progress } from './ui/progress';
 import { axiosWithAuth } from './api/axiosWithAuth';
+import { useAlert } from '../hooks/useAlert';
+import { AlertDisplay } from './AlertDisplay';
 
 const CATEGORIES = [
   { value: 'Aluguel', label: 'Aluguel', color: 'bg-blue-500' },
@@ -40,7 +42,7 @@ export default function Expenses() {
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [activeTab, setActiveTab] = useState('list');
 
   // Estados para paginação e filtros
@@ -81,7 +83,7 @@ export default function Expenses() {
       setExpenses(response.data.expenses);
       setTotalPages(response.data.pagination.totalPages);
     } catch (err) {
-      setError('Erro ao carregar despesas');
+      showError('Erro ao carregar despesas');
       console.error('Erro ao buscar despesas:', err);
     } finally {
       setLoading(false);
@@ -142,13 +144,14 @@ export default function Expenses() {
       });
       
       setShowAddDialog(false);
+      showSuccess('Despesa adicionada com sucesso!');
       fetchExpenses();
       if (activeTab === 'analytics') {
         fetchSummary();
         fetchAnalytics();
       }
     } catch (err) {
-      setError('Erro ao adicionar despesa');
+      showError('Erro ao adicionar despesa');
       console.error('Erro ao criar despesa:', err);
     }
   };
@@ -173,9 +176,10 @@ export default function Expenses() {
       
       setEditingExpense(null);
       setShowEditDialog(false);
+      showSuccess('Despesa atualizada com sucesso!');
       fetchExpenses();
     } catch (err) {
-      setError('Erro ao atualizar despesa');
+      showError('Erro ao atualizar despesa');
       console.error('Erro ao atualizar despesa:', err);
     }
   };
@@ -184,9 +188,10 @@ export default function Expenses() {
     if (window.confirm('Tem certeza que deseja excluir esta despesa?')) {
       try {
         await axiosWithAuth(`/expenses/${id}`, { method: 'DELETE' });
+        showSuccess('Despesa excluída com sucesso!');
         fetchExpenses();
       } catch (err) {
-        setError('Erro ao excluir despesa');
+        showError('Erro ao excluir despesa');
         console.error('Erro ao excluir despesa:', err);
       }
     }
@@ -211,18 +216,13 @@ export default function Expenses() {
 
   return (
     <div className="space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold">Controle de Despesas</h2>
         <Button onClick={() => setShowAddDialog(true)}>
           Adicionar Despesa
         </Button>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

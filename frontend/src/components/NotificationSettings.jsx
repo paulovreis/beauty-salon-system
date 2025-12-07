@@ -4,13 +4,15 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert } from './ui/alert';
 import { axiosWithAuth } from './api/axiosWithAuth';
+import { useAlert } from '../hooks/useAlert';
+import { AlertDisplay } from './AlertDisplay';
 
 const NotificationSettings = () => {
   const [employees, setEmployees] = useState([]);
   const [notificationTypes, setNotificationTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [alert, setAlert] = useState(null);
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [testingNotification, setTestingNotification] = useState(null);
   const [sendingAnalysis, setSendingAnalysis] = useState(false);
@@ -32,10 +34,7 @@ const NotificationSettings = () => {
       setNotificationTypes(typesResponse.data.data || []);
     } catch (error) {
       console.error('Erro ao carregar configurações:', error);
-      setAlert({
-        type: 'error',
-        message: 'Erro ao carregar configurações de notificação'
-      });
+      showError('Erro ao carregar configurações de notificação');
     } finally {
       setLoading(false);
     }
@@ -62,16 +61,10 @@ const NotificationSettings = () => {
           : emp
       ));
 
-      setAlert({
-        type: 'success',
-        message: 'Configurações atualizadas com sucesso!'
-      });
+      showSuccess('Configurações atualizadas com sucesso!');
     } catch (error) {
       console.error('Erro ao atualizar configurações:', error);
-      setAlert({
-        type: 'error',
-        message: 'Erro ao atualizar configurações'
-      });
+      showError('Erro ao atualizar configurações');
     } finally {
       setSaving(false);
     }
@@ -85,16 +78,10 @@ const NotificationSettings = () => {
         data: {}
       });
       
-      setAlert({
-        type: 'success',
-        message: `Notificação de teste enviada para ${employeeName}!`
-      });
+      showSuccess(`Notificação de teste enviada para ${employeeName}!`);
     } catch (error) {
       console.error('Erro ao enviar notificação de teste:', error);
-      setAlert({
-        type: 'error',
-        message: error.response?.data?.message || 'Erro ao enviar notificação de teste'
-      });
+      showError(error.response?.data?.message || 'Erro ao enviar notificação de teste');
     } finally {
       setTestingNotification(null);
     }
@@ -108,16 +95,10 @@ const NotificationSettings = () => {
         data: {}
       });
       
-      setAlert({
-        type: 'success',
-        message: 'Notificações diárias enviadas para todos os funcionários!'
-      });
+      showSuccess('Notificações diárias enviadas para todos os funcionários!');
     } catch (error) {
       console.error('Erro ao enviar notificações diárias:', error);
-      setAlert({
-        type: 'error',
-        message: error.response?.data?.message || 'Erro ao enviar notificações diárias'
-      });
+      showError(error.response?.data?.message || 'Erro ao enviar notificações diárias');
     } finally {
       setLoading(false);
     }
@@ -127,10 +108,10 @@ const NotificationSettings = () => {
     try {
       setSendingAnalysis(true);
       await axiosWithAuth('/notifications/daily-analysis', { method: 'POST', data: {} });
-      setAlert({ type: 'success', message: 'Análise diária enviada para gerentes/donos!' });
+      showSuccess('Análise diária enviada para gerentes/donos!');
     } catch (error) {
       console.error('Erro ao enviar análise diária:', error);
-      setAlert({ type: 'error', message: error.response?.data?.message || 'Erro ao enviar análise diária' });
+      showError(error.response?.data?.message || 'Erro ao enviar análise diária');
     } finally {
       setSendingAnalysis(false);
     }
@@ -141,10 +122,10 @@ const NotificationSettings = () => {
       setCheckingLowStock(true);
       const resp = await axiosWithAuth('/notifications/check-low-stock', { method: 'POST', data: {} });
       const count = resp.data?.data?.count ?? 0;
-      setAlert({ type: 'success', message: `Verificação de estoque baixo concluída (${count} produto(s))` });
+      showSuccess(`Verificação de estoque baixo concluída (${count} produto(s))`);
     } catch (error) {
       console.error('Erro ao verificar estoque baixo:', error);
-      setAlert({ type: 'error', message: error.response?.data?.message || 'Erro na verificação de estoque baixo' });
+      showError(error.response?.data?.message || 'Erro na verificação de estoque baixo');
     } finally {
       setCheckingLowStock(false);
     }
@@ -231,13 +212,7 @@ const NotificationSettings = () => {
 
   return (
     <div className="p-6 space-y-6">
-      {alert && (
-        <Alert className={`${alert.type === 'error' ? 'border-red-500 bg-red-50' : 'border-green-500 bg-green-50'}`}>
-          <div className={`${alert.type === 'error' ? 'text-red-700' : 'text-green-700'}`}>
-            {alert.message}
-          </div>
-        </Alert>
-      )}
+      <AlertDisplay alert={alert} onClose={clearAlert} />
 
       <div className="flex justify-between items-center">
         <div>

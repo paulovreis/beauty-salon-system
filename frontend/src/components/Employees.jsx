@@ -29,14 +29,16 @@ import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar";
 import { Plus, Edit, Trash2, DollarSign } from "lucide-react";
 import { axiosWithAuth } from "./api/axiosWithAuth.js";
 import { getCurrentUserRole, getCurrentUserId } from "../lib/auth";
+import { useAlert } from "../hooks/useAlert";
+import { AlertDisplay } from "./AlertDisplay";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
 export default function Employees() {
   const role = getCurrentUserRole();
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [services, setServices] = useState([]);
   // Não precisa mais de availableServices, usaremos services diretamente
   const [newEmployee, setNewEmployee] = useState({
@@ -55,7 +57,7 @@ export default function Employees() {
 
   // Abre modal de edição e carrega especialidades do funcionário
   const handleEditClick = async (employee) => {
-    setError("");
+    clearAlert();
     try {
       // Busca especialidades do funcionário
       const res = await axiosWithAuth(`${API_URL}/employees/${employee.id}/specialties`, { method: "get" });
@@ -63,7 +65,7 @@ export default function Employees() {
       setEditingEmployee({ ...employee, specialties });
       setEditModalOpen(true);
     } catch (err) {
-      setError("Erro ao carregar especialidades do funcionário");
+      showError(err);
     }
   };
 
@@ -115,7 +117,7 @@ export default function Employees() {
 
   // Salva edição do funcionário e especialidades
   const handleSaveEditEmployee = async () => {
-    setError("");
+    clearAlert();
     try {
       // Atualiza dados básicos
       await axiosWithAuth(`${API_URL}/employees/${editingEmployee.id}`, {
@@ -185,7 +187,7 @@ export default function Employees() {
       setEditModalOpen(false);
       setEditingEmployee(null);
     } catch (err) {
-      setError("Erro ao salvar edição do funcionário");
+      showError(err);
     }
   };
 
@@ -193,12 +195,12 @@ export default function Employees() {
   useEffect(() => {
     async function fetchEmployees() {
       setLoading(true);
-      setError("");
+      clearAlert();
       try {
         const res = await axiosWithAuth(`${API_URL}/employees`, { method: "get" });
         setEmployees(res.data);
       } catch (err) {
-        setError("Erro ao carregar funcionários.");
+        showError(err);
       } finally {
         setLoading(false);
       }
@@ -252,7 +254,7 @@ export default function Employees() {
 
   // Adicionar funcionário (integração backend)
   const handleAddEmployee = async () => {
-    setError("");
+    clearAlert();
     try {
       // Cria funcionário
       const res = await axiosWithAuth(`${API_URL}/employees`, {
@@ -266,7 +268,7 @@ export default function Employees() {
         },
       });
       if (res.status === 409) {
-        setError("E-mail já cadastrado");
+        showError("E-mail já cadastrado");
         return;
       }
       const created = res.data;
@@ -280,27 +282,31 @@ export default function Employees() {
       // Recarrega lista
       const reload = await axiosWithAuth(`${API_URL}/employees`, { method: "get" });
       setEmployees(reload.data);
-      setNewEmployee({ name: "", email: "", phone: "", specialties: [] });
+      setNewEmployee({ name: "", email: "", phone: "", role: "", password: "", specialties: [] });
+      showSuccess('Funcionário criado com sucesso!');
     } catch (err) {
-      setError(err.message || "Erro ao criar funcionário");
+      showError(err);
     }
   };
 
   // Deletar funcionário
   const handleDeleteEmployee = async (id) => {
     if (!window.confirm("Tem certeza que deseja excluir este funcionário?")) return;
-    setError("");
+    clearAlert();
     try {
       await axiosWithAuth(`${API_URL}/employees/${id}`, { method: "delete" });
       // Atualiza lista
       setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+      showSuccess('Funcionário excluído com sucesso!');
     } catch (err) {
-      setError(err.message || "Erro ao excluir funcionário");
+      showError(err);
     }
   };
 
   return (
     <div className="space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
+      
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold">Gestão de Funcionários</h2>

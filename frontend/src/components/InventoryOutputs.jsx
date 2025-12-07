@@ -6,14 +6,15 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { getCurrentUserRole } from "../lib/auth";
+import { useAlert } from '../hooks/useAlert';
+import { AlertDisplay } from './AlertDisplay';
 
 export default function InventoryOutputs() {
   const role = getCurrentUserRole();
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [outputs, setOutputs] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
   
@@ -58,7 +59,7 @@ export default function InventoryOutputs() {
 
   const loadOutputs = async () => {
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       const params = new URLSearchParams({
         page: page.toString(),
@@ -72,7 +73,7 @@ export default function InventoryOutputs() {
       setOutputs(response.data.outputs);
       setPagination(response.data.pagination);
     } catch (err) {
-      setError('Erro ao carregar saídas: ' + err.message);
+      showError('Erro ao carregar saídas: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -80,8 +81,7 @@ export default function InventoryOutputs() {
 
   const handleCreateOutput = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    clearAlert();
 
     try {
       const response = await axiosWithAuth('/inventory/outputs', {
@@ -92,20 +92,19 @@ export default function InventoryOutputs() {
         }
       });
 
-      setSuccess('Saída registrada com sucesso!');
+      showSuccess('Saída registrada com sucesso!');
       setShowModal(false);
       resetForm();
       loadOutputs();
     } catch (err) {
       const message = err.response?.data?.message || err.message;
-      setError('Erro ao registrar saída: ' + message);
+      showError('Erro ao registrar saída: ' + message);
     }
   };
 
   const handleUpdateOutput = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    clearAlert();
 
     try {
       await axiosWithAuth(`/inventory/outputs/${editingOutput.id}`, {
@@ -118,14 +117,14 @@ export default function InventoryOutputs() {
         }
       });
 
-      setSuccess('Saída atualizada com sucesso!');
+      showSuccess('Saída atualizada com sucesso!');
       setShowModal(false);
       setEditingOutput(null);
       resetForm();
       loadOutputs();
     } catch (err) {
       const message = err.response?.data?.message || err.message;
-      setError('Erro ao atualizar saída: ' + message);
+      showError('Erro ao atualizar saída: ' + message);
     }
   };
 
@@ -139,11 +138,11 @@ export default function InventoryOutputs() {
         method: 'delete'
       });
       
-      setSuccess(`Saída deletada! ${response.data.quantity_restored} unidades revertidas ao estoque.`);
+      showSuccess(`Saída deletada! ${response.data.quantity_restored} unidades revertidas ao estoque.`);
       loadOutputs();
     } catch (err) {
       const message = err.response?.data?.message || err.message;
-      setError('Erro ao deletar saída: ' + message);
+      showError('Erro ao deletar saída: ' + message);
     }
   };
 
@@ -198,6 +197,8 @@ export default function InventoryOutputs() {
 
   return (
     <div className="p-6 space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
+      
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Saídas de Inventário</h1>
         <button
@@ -207,17 +208,6 @@ export default function InventoryOutputs() {
           Registrar Nova Saída
         </button>
       </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-          {success}
-        </div>
-      )}
 
       {/* Filtros */}
       <Card>

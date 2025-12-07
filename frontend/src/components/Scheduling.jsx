@@ -19,8 +19,11 @@ import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar"
 import { Plus, Clock, User, CalendarIcon, Edit, Trash2, Phone, ChevronDown, Check, XCircle } from "lucide-react"
 import { axiosWithAuth } from "./api/axiosWithAuth"
 import { SchedulingApi, ClientsApi } from "./api/scheduling"
+import { useAlert } from "../hooks/useAlert";
+import { AlertDisplay } from "./AlertDisplay";
 
 export default function Scheduling() {
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(false)
@@ -55,7 +58,6 @@ export default function Scheduling() {
   const [showClientDropdown, setShowClientDropdown] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [toast, setToast] = useState(null) // {type,message}
   // Payment modal state
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [paymentTarget, setPaymentTarget] = useState(null)
@@ -328,11 +330,11 @@ export default function Scheduling() {
       
       // Refresh next five as well
       await Promise.all([loadNextFive(), loadUpcoming(true)])
-      setToast({type:'success', message:'Agendamento criado'})
+      showSuccess('Agendamento criado com sucesso!')
   window.dispatchEvent(new CustomEvent('appointments:changed'))
     } catch (e) {
       console.error('Erro ao criar agendamento:', e)
-      setToast({type:'error', message:'Erro ao criar: '+(e.response?.data?.message || e.message)})
+      showError(e)
     }
   }
 
@@ -375,7 +377,7 @@ export default function Scheduling() {
       }
       setEditModalOpen(true)
     }catch(err){
-      setToast({type:'error', message:'Falha ao carregar agendamento para edição'})
+      showError('Falha ao carregar agendamento para edição')
     }
   }
 
@@ -384,7 +386,7 @@ export default function Scheduling() {
     
     // Validar campos obrigatórios
     if (!editing.date || !editing.time || !editing.employeeId || !editing.serviceId) {
-      setToast({type:'error', message:'Preencha todos os campos obrigatórios (data, hora, funcionário e serviço)'});
+      showError('Preencha todos os campos obrigatórios (data, hora, funcionário e serviço)');
       return;
     }
     
@@ -416,10 +418,10 @@ export default function Scheduling() {
       }))
       setAppointments(mapped)
       await Promise.all([loadNextFive(), loadUpcoming(true)])
-      setToast({type:'success', message:'Agendamento atualizado'})
+      showSuccess('Agendamento atualizado com sucesso!')
   window.dispatchEvent(new CustomEvent('appointments:changed'))
     }catch(e){
-      setToast({type:'error', message:'Erro ao salvar edição: '+(e.response?.data?.message||e.message)})
+      showError(e)
     }finally{
       setEditModalOpen(false); setEditing(null)
     }
@@ -440,11 +442,11 @@ export default function Scheduling() {
       else updated = await SchedulingApi.update(appointment.id,{status:newStatus})
       setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: updated.status } : a))
       await Promise.all([loadNextFive(), loadUpcoming(true)])
-      setToast({type:'success', message:'Status atualizado'})
+      showSuccess('Status atualizado com sucesso!')
       // Dispara evento global para outras telas recarregarem stats
       window.dispatchEvent(new CustomEvent('appointments:changed'))
     } catch (e) {
-      setToast({type:'error', message:'Erro ao alterar status: '+(e.response?.data?.message || e.message)})
+      showError(e)
     } finally {
       setStatusMenuOpenId(null)
     }
@@ -456,10 +458,10 @@ export default function Scheduling() {
       const updated = await SchedulingApi.complete(paymentTarget.id, { payment_method: paymentMethod })
       setAppointments(prev => prev.map(a => a.id === paymentTarget.id ? { ...a, status: updated.status } : a))
       await Promise.all([loadNextFive(), loadUpcoming(true)])
-      setToast({type:'success', message:'Serviço concluído e pagamento registrado'})
+      showSuccess('Serviço concluído e pagamento registrado com sucesso!')
       window.dispatchEvent(new CustomEvent('appointments:changed'))
     } catch (e) {
-      setToast({type:'error', message:'Erro ao registrar pagamento: '+(e.response?.data?.message || e.message)})
+      showError(e)
     } finally {
       setShowPaymentDialog(false)
       setPaymentTarget(null)
@@ -497,11 +499,11 @@ export default function Scheduling() {
       }))
       setAppointments(mapped)
       await Promise.all([loadNextFive(), loadUpcoming(true)])
-      setToast({type:'success', message:'Agendamento excluído'})
+      showSuccess('Agendamento excluído com sucesso!')
   window.dispatchEvent(new CustomEvent('appointments:changed'))
     } catch (e) {
       console.error('Erro ao excluir agendamento:', e)
-      setToast({type:'error', message:'Erro ao excluir: '+(e.response?.data?.message || e.message)})
+      showError(e)
     } finally {
       setShowDeleteDialog(false)
       setDeleteTarget(null)
@@ -584,6 +586,8 @@ export default function Scheduling() {
 
   return (
     <div className="space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
+      
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold">Agendamento de Consultas</h2>
@@ -1152,17 +1156,6 @@ export default function Scheduling() {
           )}
         </DialogContent>
       </Dialog>
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed bottom-4 right-4 px-4 py-2 rounded shadow text-sm text-white ${toast.type==='error'?'bg-red-600':'bg-green-600'}`}
-             onAnimationEnd={()=>{ /* could add auto dismiss */ }}>
-          <div className="flex items-center gap-2">
-            {toast.type==='error'? <XCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-            <span>{toast.message}</span>
-            <button className="ml-2 text-xs underline" onClick={()=> setToast(null)}>fechar</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

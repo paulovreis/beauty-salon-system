@@ -30,14 +30,16 @@ import {
 import { Textarea } from "./ui/textarea";
 import { Plus, Edit, Trash2, Calculator } from "lucide-react";
 import { getCurrentUserRole } from "../lib/auth";
+import { useAlert } from "../hooks/useAlert";
+import { AlertDisplay } from "./AlertDisplay";
 
 export default function ServicesProducts() {
   const role = getCurrentUserRole();
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const baseUrl = "http://localhost:5000"; // Base URL for API requests
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const [newService, setNewService] = useState({
     name: "",
@@ -88,7 +90,7 @@ export default function ServicesProducts() {
   // Buscar produtos do backend
   async function fetchProducts() {
     setLoading(true);
-    setError("");
+    clearAlert();
     try {
       const res = await axiosWithAuth("/inventory", { method: "get" });
       // O endpoint /inventory retorna { products: [...], pagination: {...} }
@@ -96,7 +98,7 @@ export default function ServicesProducts() {
       // Garantir que products seja sempre um array
       setProducts(Array.isArray(productsData) ? productsData : []);
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
       setProducts([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
@@ -112,7 +114,7 @@ export default function ServicesProducts() {
       // Garantir que productCategories seja sempre um array
       setProductCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
       setProductCategories([]); // Definir como array vazio em caso de erro
     }
   }
@@ -155,13 +157,13 @@ export default function ServicesProducts() {
 
   async function fetchServices() {
     setLoading(true);
-    setError("");
+    clearAlert();
     try {
       const res = await axiosWithAuth("/services/", { method: "get" });
       // Garantir que services seja sempre um array
       setServices(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
       setServices([]); // Definir como array vazio em caso de erro
     } finally {
       setLoading(false);
@@ -176,7 +178,7 @@ export default function ServicesProducts() {
       // Garantir que categories seja sempre um array
       setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
       setCategories([]); // Definir como array vazio em caso de erro
     }
   }
@@ -192,20 +194,20 @@ export default function ServicesProducts() {
       });
       return res.data.price;
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
       return "";
     }
   }
 
   async function handleAddService() {
-    setError("");
+    clearAlert();
     if (
       !newService.name ||
       !newService.category_id ||
       !newService.base_cost ||
       !newService.profit_margin
     ) {
-      setError("Preencha todos os campos obrigatórios!");
+      showError("Preencha todos os campos obrigatórios!");
       return;
     }
     setLoading(true);
@@ -234,9 +236,10 @@ export default function ServicesProducts() {
         duration_minutes: "",
         description: "",
       });
+      showSuccess('Serviço criado com sucesso!');
       fetchServices();
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
     } finally {
       setLoading(false);
     }
@@ -306,14 +309,14 @@ export default function ServicesProducts() {
   // }
 
   async function handleAddProduct() {
-    setError("");
+    clearAlert();
     if (
       !newProduct.name ||
       !newProduct.category_id ||
       !newProduct.cost_price ||
       !newProduct.selling_price
     ) {
-      setError("Preencha todos os campos obrigatórios!");
+      showError("Preencha todos os campos obrigatórios!");
       return;
     }
     setLoading(true);
@@ -353,9 +356,10 @@ export default function ServicesProducts() {
         supplier_contact: "",
         description: "",
       });
+      showSuccess('Produto adicionado com sucesso!');
       fetchProducts();
     } catch (e) {
-      setError(e.response?.data?.message || e.message);
+      showError(e);
     } finally {
       setLoading(false);
     }
@@ -562,6 +566,8 @@ export default function ServicesProducts() {
 
   return (
     <div className="space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
+      
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold">Serviços & Produtos</h2>
@@ -697,10 +703,10 @@ export default function ServicesProducts() {
                         onChange={(e) => {
                           const value = parseFloat(e.target.value);
                           if (value >= 100) {
-                            setError("Margem de lucro deve ser menor que 100%");
+                            showError("Margem de lucro deve ser menor que 100%");
                             return;
                           }
-                          setError("");
+                          clearAlert();
                           setNewService({
                             ...newService,
                             profit_margin: e.target.value,
@@ -1170,10 +1176,10 @@ export default function ServicesProducts() {
                 onChange={(e) => {
                   const value = parseFloat(e.target.value);
                   if (value >= 100) {
-                    setError("Margem de lucro deve ser menor que 100%");
+                    showError("Margem de lucro deve ser menor que 100%");
                     return;
                   }
-                  setError("");
+                  clearAlert();
                   setEditingService({ ...editingService, profit_margin: e.target.value });
                 }}
               />

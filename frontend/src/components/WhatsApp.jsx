@@ -15,6 +15,8 @@ import {
   Users, 
   Trash2 
 } from 'lucide-react';
+import { useAlert } from '../hooks/useAlert';
+import { AlertDisplay } from './AlertDisplay';
 
 // Configuração da API da Evolution - EvolutionAPI 2.3.6
 const EVOLUTION_API_URL = process.env.REACT_APP_EVOLUTION_API_URL || 'http://localhost:8080';
@@ -101,8 +103,7 @@ const evolutionApi = {
 export default function WhatsApp() {
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   
   // Estados para criação de instância
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -132,7 +133,7 @@ export default function WhatsApp() {
 
   const loadInstances = async () => {
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       console.log('Tentando conectar com Evolution API...');
       console.log('URL:', EVOLUTION_API_URL);
@@ -160,7 +161,7 @@ export default function WhatsApp() {
       setInstances(normalized);
     } catch (err) {
       console.error('Erro detalhado:', err);
-      setError('Erro ao carregar instâncias: ' + err.message);
+      showError('Erro ao carregar instâncias: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -169,20 +170,20 @@ export default function WhatsApp() {
   const handleCreateInstance = async (e) => {
     e.preventDefault();
     if (!newInstanceName.trim()) {
-      setError('Nome da instância é obrigatório');
+      showError('Nome da instância é obrigatório');
       return;
     }
 
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       await evolutionApi.createInstance(newInstanceName.trim());
-      setSuccess('Instância criada com sucesso!');
+      showSuccess('Instância criada com sucesso!');
       setShowCreateModal(false);
       setNewInstanceName('');
       loadInstances();
     } catch (err) {
-      setError('Erro ao criar instância: ' + err.message);
+      showError('Erro ao criar instância: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -194,13 +195,13 @@ export default function WhatsApp() {
     }
 
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       await evolutionApi.deleteInstance(instanceName);
-      setSuccess('Instância excluída com sucesso!');
+      showSuccess('Instância excluída com sucesso!');
       loadInstances();
     } catch (err) {
-      setError('Erro ao excluir instância: ' + err.message);
+      showError('Erro ao excluir instância: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -208,14 +209,15 @@ export default function WhatsApp() {
 
   const handleConnectInstance = async (instanceName) => {
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       const response = await evolutionApi.getQRCode(instanceName);
       setQrCodeData(response);
       setSelectedInstance(instanceName);
       setShowQRModal(true);
+      showSuccess('QR Code gerado com sucesso!');
     } catch (err) {
-      setError('Erro ao obter QR Code: ' + err.message);
+      showError('Erro ao obter QR Code: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -224,23 +226,23 @@ export default function WhatsApp() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!messageData.instanceName || !messageData.number || !messageData.message) {
-      setError('Todos os campos são obrigatórios para enviar mensagem');
+      showError('Todos os campos são obrigatórios para enviar mensagem');
       return;
     }
 
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       await evolutionApi.sendMessage(
         messageData.instanceName,
         messageData.number,
         messageData.message
       );
-      setSuccess('Mensagem enviada com sucesso!');
+      showSuccess('Mensagem enviada com sucesso!');
       setShowMessageModal(false);
       setMessageData({ instanceName: '', number: '', message: '' });
     } catch (err) {
-      setError('Erro ao enviar mensagem: ' + err.message);
+      showError('Erro ao enviar mensagem: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -248,7 +250,7 @@ export default function WhatsApp() {
 
   const handleViewContacts = async (instanceName) => {
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       const [contactsResponse, chatsResponse] = await Promise.all([
         evolutionApi.getContacts(instanceName),
@@ -259,8 +261,9 @@ export default function WhatsApp() {
       setChats(chatsResponse || []);
       setSelectedInstance(instanceName);
       setShowContactsModal(true);
+      showSuccess('Contatos carregados com sucesso!');
     } catch (err) {
-      setError('Erro ao carregar contatos: ' + err.message);
+      showError('Erro ao carregar contatos: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -292,17 +295,7 @@ export default function WhatsApp() {
 
   return (
     <div className="space-y-6">
-      {/* Mensagens de erro e sucesso */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded">
-          {success}
-        </div>
-      )}
+      <AlertDisplay alert={alert} onClose={clearAlert} />
 
       {/* Cabeçalho */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

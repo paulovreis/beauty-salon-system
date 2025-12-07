@@ -7,6 +7,8 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Badge } from './ui/badge';
+import { useAlert } from '../hooks/useAlert';
+import { AlertDisplay } from './AlertDisplay';
 import { 
   Search, 
   Plus, 
@@ -23,11 +25,10 @@ import {
 } from 'lucide-react';
 
 export default function Clients() {
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [clients, setClients] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
@@ -59,7 +60,7 @@ export default function Clients() {
 
   const loadClients = async () => {
     setLoading(true);
-    setError('');
+    clearAlert();
     try {
       const params = new URLSearchParams({
         page: page.toString(),
@@ -82,7 +83,7 @@ export default function Clients() {
         setPagination(response.data.pagination);
       }
     } catch (err) {
-      setError('Erro ao carregar clientes: ' + (err.response?.data?.message || err.message));
+      showError(err);
     } finally {
       setLoading(false);
     }
@@ -117,8 +118,7 @@ export default function Clients() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    clearAlert();
     
     try {
       if (editingClient) {
@@ -126,13 +126,13 @@ export default function Clients() {
           method: 'PUT',
           data: formData
         });
-        setSuccess('Cliente atualizado com sucesso!');
+        showSuccess('Cliente atualizado com sucesso!');
       } else {
         await axiosWithAuth('/clients', {
           method: 'POST',
           data: formData
         });
-        setSuccess('Cliente criado com sucesso!');
+        showSuccess('Cliente criado com sucesso!');
       }
       
       setShowModal(false);
@@ -140,7 +140,7 @@ export default function Clients() {
       loadClients();
       loadStats();
     } catch (err) {
-      setError(err.response?.data?.message || 'Erro ao salvar cliente');
+      showError(err);
     }
   };
 
@@ -163,7 +163,7 @@ export default function Clients() {
       setSelectedClient(response.data);
       setShowDetailsModal(true);
     } catch (err) {
-      setError('Erro ao carregar detalhes do cliente: ' + (err.response?.data?.message || err.message));
+      showError(err);
     }
   };
 
@@ -175,18 +175,20 @@ export default function Clients() {
   const handleDeleteConfirm = async () => {
     if (!clientToDelete) return;
     
-    setError('');
+    clearAlert();
     try {
       await axiosWithAuth(`/clients/${clientToDelete.id}`, {
         method: 'DELETE'
       });
-      setSuccess('Cliente excluído com sucesso!');
+      showSuccess('Cliente excluído com sucesso!');
       setShowDeleteModal(false);
       setClientToDelete(null);
       loadClients();
       loadStats();
     } catch (err) {
-      setError(err.response?.data?.message || 'Erro ao excluir cliente');
+      showError(err);
+      setShowDeleteModal(false);
+      setClientToDelete(null);
     }
   };
 
@@ -220,16 +222,7 @@ export default function Clients() {
   return (
     <div className="space-y-6">
       {/* Mensagens de erro e sucesso */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded">
-          {success}
-        </div>
-      )}
+      <AlertDisplay alert={alert} onClose={clearAlert} />
 
       {/* Estatísticas */}
       {stats && (

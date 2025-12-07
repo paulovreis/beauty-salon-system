@@ -18,13 +18,15 @@ import { Progress } from "./ui/progress"
 import { Plus, Package, AlertTriangle, TrendingDown, Calendar, Edit, Trash2 } from "lucide-react"
 import { axiosWithAuth } from "./api/axiosWithAuth";
 import { getCurrentUserRole } from "../lib/auth";
+import { useAlert } from "../hooks/useAlert";
+import { AlertDisplay } from "./AlertDisplay";
 
 export default function Inventory() {
   const role = getCurrentUserRole();
+  const { alert, showSuccess, showError, clearAlert } = useAlert();
   const [inventory, setInventory] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [editingItem, setEditingItem] = useState(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -37,7 +39,7 @@ export default function Inventory() {
 
   const loadData = async () => {
     setLoading(true);
-    setError("");
+    clearAlert();
     try {
       // Buscar produtos via inventoryController
       const inventoryRes = await axiosWithAuth("/inventory");
@@ -81,7 +83,7 @@ export default function Inventory() {
       setInventory(mapped);
     } catch (err) {
       console.error('Erro ao carregar inventário', err);
-      setError('Não foi possível carregar o inventário');
+      showError('Não foi possível carregar o inventário');
     } finally {
       setLoading(false);
     }
@@ -168,22 +170,22 @@ export default function Inventory() {
   const handleAddItem = async () => {
     // Validação mais específica
     if (!newItem.name.trim()) {
-      setError("Nome do produto é obrigatório");
+      showError("Nome do produto é obrigatório");
       return;
     }
     
     if (!newItem.category_id) {
-      setError("Categoria é obrigatória");
+      showError("Categoria é obrigatória");
       return;
     }
     
     if (!newItem.cost || Number(newItem.cost) <= 0) {
-      setError("Custo deve ser um valor positivo");
+      showError("Custo deve ser um valor positivo");
       return;
     }
     
     if (!newItem.sellingPrice || Number(newItem.sellingPrice) <= 0) {
-      setError("Preço de venda deve ser um valor positivo");
+      showError("Preço de venda deve ser um valor positivo");
       return;
     }
 
@@ -245,6 +247,8 @@ export default function Inventory() {
         },
       ]);
       
+      showSuccess('Produto adicionado com sucesso!');
+      
       // Limpar formulário
       setNewItem({
         name: "",
@@ -261,7 +265,7 @@ export default function Inventory() {
     } catch (err) {
       console.error("Erro detalhado:", err);
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido";
-      setError("Erro ao adicionar produto: " + errorMsg);
+      showError("Erro ao adicionar produto: " + errorMsg);
     }
   }
 
@@ -284,7 +288,7 @@ export default function Inventory() {
 
   const handleSaveEdit = async () => {
     if (!editingItem.name || !editingItem.category_id || !editingItem.cost || !editingItem.sellingPrice) {
-      setError("Preencha todos os campos obrigatórios")
+      showError("Preencha todos os campos obrigatórios")
       return
     }
 
@@ -345,10 +349,11 @@ export default function Inventory() {
 
       setShowEditDialog(false)
       setEditingItem(null)
+      showSuccess('Produto atualizado com sucesso!');
     } catch (err) {
       console.error("Erro ao editar produto:", err)
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
-      setError("Erro ao editar produto: " + errorMsg)
+      showError("Erro ao editar produto: " + errorMsg)
     }
   }
 
@@ -368,10 +373,11 @@ export default function Inventory() {
       setInventory(prev => prev.filter(item => item.id !== itemToDelete.id))
       setShowDeleteDialog(false)
       setItemToDelete(null)
+      showSuccess('Produto excluído com sucesso!');
     } catch (err) {
       console.error("Erro ao excluir produto:", err)
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
-      setError("Erro ao excluir produto: " + errorMsg)
+      showError("Erro ao excluir produto: " + errorMsg)
     }
   }
 
@@ -384,7 +390,7 @@ export default function Inventory() {
 
   const handleConfirmRestock = async () => {
     if (!restockItem || restockQuantity <= 0) {
-      setError("Quantidade deve ser maior que zero")
+      showError("Quantidade deve ser maior que zero")
       return
     }
 
@@ -402,10 +408,11 @@ export default function Inventory() {
       await loadData()
       setShowRestockDialog(false)
       setRestockItem(null)
+      showSuccess('Produto reabastecido com sucesso!');
     } catch (err) {
       console.error("Erro ao reabastecer produto:", err)
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Erro desconhecido"
-      setError("Erro ao reabastecer produto: " + errorMsg)
+      showError("Erro ao reabastecer produto: " + errorMsg)
     } finally {
       setRestockLoading(false)
     }
@@ -422,16 +429,11 @@ export default function Inventory() {
 
   return (
     <div className="space-y-6">
+      <AlertDisplay alert={alert} onClose={clearAlert} />
+      
       {loading && (
         <Alert>
           <AlertDescription>Carregando dados do estoque...</AlertDescription>
-        </Alert>
-      )}
-      
-      {error && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
