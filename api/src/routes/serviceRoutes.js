@@ -41,7 +41,7 @@ router.get(
 router.post(
   "/categories",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateCategoryCreate,
   (req, res) => ServiceCategoryController.create(req, res)
 );
@@ -49,7 +49,7 @@ router.post(
 router.put(
   "/categories/:id",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateCategoryUpdate,
   (req, res) => ServiceCategoryController.update(req, res)
 );
@@ -84,7 +84,7 @@ router.get(
 router.post(
   "/",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateCreateService,
   (req, res) => serviceController.createService(req, res)
 );
@@ -93,7 +93,7 @@ router.post(
 router.put(
   "/:id",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateUpdateService,
   (req, res) => serviceController.updateService(req, res)
 );

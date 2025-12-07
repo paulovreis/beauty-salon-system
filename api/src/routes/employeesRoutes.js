@@ -11,8 +11,11 @@ import {
 
 const router = express.Router();
 
-// GET /employees - Listar todos os funcionários (owner, manager)
-router.get('/', authenticateJWT, roleMiddleware(['owner', 'manager']), EmployeeController.list);
+// GET /employees - Listar todos os funcionários (owner, manager, employee)
+router.get('/', authenticateJWT, roleMiddleware(['owner', 'manager', 'employee']), EmployeeController.list);
+
+// GET /employees/list - Lista básica de funcionários para agendamento (owner, manager, employee)
+router.get('/list', authenticateJWT, roleMiddleware(['owner', 'manager', 'employee']), EmployeeController.listBasic);
 
 // GET /employees/:id - Detalhe de funcionário (owner, manager, employee dono do próprio id)
 router.get('/:id', authenticateJWT, EmployeeController.detail);

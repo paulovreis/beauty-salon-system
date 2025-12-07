@@ -29,8 +29,10 @@ import {
 } from "./ui/select";
 import { Textarea } from "./ui/textarea";
 import { Plus, Edit, Trash2, Calculator } from "lucide-react";
+import { getCurrentUserRole } from "../lib/auth";
 
 export default function ServicesProducts() {
+  const role = getCurrentUserRole();
   const baseUrl = "http://localhost:5000"; // Base URL for API requests
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -403,12 +405,12 @@ export default function ServicesProducts() {
     }
     
     // Calcula o preço recomendado usando base_cost e profit_margin
+    // Fórmula: Preço = Custo / (1 - Margem/100)
     let recommended_price = "";
     if (service.base_cost && service.profit_margin) {
-      recommended_price = (
-      Number(service.base_cost) +
-      (Number(service.base_cost) * Number(service.profit_margin) / 100)
-      ).toFixed(2);
+      const baseCost = Number(service.base_cost);
+      const profitMargin = Number(service.profit_margin);
+      recommended_price = (baseCost / (1 - (profitMargin / 100))).toFixed(2);
     }
 
     const editData = {
@@ -428,19 +430,25 @@ export default function ServicesProducts() {
   }
 
   async function handleSaveEditService() {
-    if (!editingService.name || !editingService.category_id || !editingService.base_cost || !editingService.profit_margin || !editingService.recommended_price || !editingService.duration) return;
+    if (!editingService.name || !editingService.category_id || !editingService.base_cost || !editingService.profit_margin || !editingService.duration) return;
 
     try {
       setLoading(true);
+      
+      // Recalcular o preço recomendado com os valores atualizados
+      const baseCost = parseFloat(editingService.base_cost) || 0;
+      const profitMargin = parseFloat(editingService.profit_margin) || 0;
+      const recommended_price = baseCost / (1 - (profitMargin / 100));
+      
       await axiosWithAuth(`/services/${editingService.id}`, {
         method: "put",
         data: {
           name: editingService.name,
           description: editingService.description || null,
-          base_cost: parseFloat(editingService.base_cost) || 0,
-          recommended_price: parseFloat(editingService.recommended_price) || 0,
+          base_cost: baseCost,
+          recommended_price: parseFloat(recommended_price.toFixed(2)),
           duration_minutes: parseInt(editingService.duration) || 0,
-          profit_margin: 20, // valor padrão
+          profit_margin: profitMargin,
           category_id: parseInt(editingService.category_id),
           is_active: true
         }
@@ -682,15 +690,27 @@ export default function ServicesProducts() {
                       <Input
                         id="profitMargin"
                         type="number"
+                        min="0"
+                        max="99.9"
+                        step="0.1"
                         value={newService.profit_margin}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value >= 100) {
+                            setError("Margem de lucro deve ser menor que 100%");
+                            return;
+                          }
+                          setError("");
                           setNewService({
                             ...newService,
                             profit_margin: e.target.value,
-                          })
-                        }
-                        placeholder="75"
+                          });
+                        }}
+                        placeholder="40"
                       />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Margem = (Preço - Custo) / Preço. Max: 99.9%
+                      </p>
                     </div>
                   </div>
                   <div>
@@ -788,6 +808,7 @@ export default function ServicesProducts() {
                     >
                       <Edit className="h-3 w-3" />
                     </Button>
+                    {(role === 'owner' || role === 'manager') && (
                     <Button 
                       variant="outline" 
                       size="sm"
@@ -795,6 +816,7 @@ export default function ServicesProducts() {
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1065,6 +1087,7 @@ export default function ServicesProducts() {
                     >
                       <Edit className="h-3 w-3" />
                     </Button>
+                    {(role === 'owner' || role === 'manager') && (
                     <Button 
                       variant="outline" 
                       size="sm"
@@ -1072,6 +1095,7 @@ export default function ServicesProducts() {
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1139,12 +1163,23 @@ export default function ServicesProducts() {
               <Input
                 id="editServiceProfit"
                 type="number"
-                step="0.01"
+                min="0"
+                max="99.9"
+                step="0.1"
                 value={editingService?.profit_margin || ""}
-                onChange={(e) =>
-                  setEditingService({ ...editingService, profit_margin: e.target.value })
-                }
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value);
+                  if (value >= 100) {
+                    setError("Margem de lucro deve ser menor que 100%");
+                    return;
+                  }
+                  setError("");
+                  setEditingService({ ...editingService, profit_margin: e.target.value });
+                }}
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Margem = (Preço - Custo) / Preço. Max: 99.9%
+              </p>
             </div>
             <div>
               <Label htmlFor="editServiceDuration">Duração (minutos)</Label>

@@ -47,6 +47,19 @@ const EmployeeController = {
     }
   },
 
+  async listBasic(req, res) {
+    try {
+      const db = getPool(req);
+      const { rows } = await db.query(
+        "SELECT id, name, email, status FROM employees ORDER BY id"
+      );
+      res.json(rows || []);
+    } catch (err) {
+      console.log("Erro ao buscar lista básica de funcionários:", err);
+      res.status(500).json({ message: "Erro ao buscar funcionários", error: err.message });
+    }
+  },
+
   async detail(req, res) {
     const db = getPool(req);
     const { id } = req.params;

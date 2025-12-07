@@ -96,7 +96,7 @@ router.get(
 router.post(
   '/outputs',
   authenticateJWT,
-  roleMiddleware(['owner', 'manager']),
+  roleMiddleware(['owner', 'manager', 'employee']),
   validateCreateOutput,
   (req, res) => InventoryController.createOutput(req, res)
 );
@@ -105,7 +105,7 @@ router.post(
 router.put(
   '/outputs/:id',
   authenticateJWT,
-  roleMiddleware(['owner', 'manager']),
+  roleMiddleware(['owner', 'manager', 'employee']),
   validateUpdateOutput,
   (req, res) => InventoryController.updateOutput(req, res)
 );
@@ -123,7 +123,7 @@ router.delete(
 router.post(
   '/:id/restock',
   authenticateJWT,
-  roleMiddleware(['owner', 'manager']),
+  roleMiddleware(['owner', 'manager', 'employee']),
   validateRestockProduct,
   (req, res) => InventoryController.restockProduct(req, res)
 );

@@ -405,7 +405,7 @@ export default function Clients() {
           ) : (
             <div className="space-y-2">
               {clients.map((client) => (
-                <div key={client.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                <div key={client.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 overflow-auto">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3">
                       <div>

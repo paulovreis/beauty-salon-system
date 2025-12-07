@@ -633,7 +633,7 @@ function App() {
 
 				<div className="space-y-6">
 					{/* Abas de Navegação */}
-					<div className="flex space-x-1 bg-white p-1 rounded-lg shadow-sm">
+					<div className="flex space-x-1 bg-white p-1 rounded-lg shadow-sm overflow-auto">
 						{navigation
 							.filter((item) => !item.allowedRoles || item.allowedRoles.includes(user?.role))
 							.map((item) => {

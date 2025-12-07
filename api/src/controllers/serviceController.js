@@ -144,6 +144,19 @@ class ServiceController {
         const db = req.pool;
         const { id } = req.params;
         try {
+            // Verifica se existem agendamentos vinculados
+            const { rows: apptRows } = await db.query(
+                "SELECT COUNT(1) AS cnt FROM appointments WHERE service_id = $1",
+                [id]
+            );
+            const hasAppointments = Number(apptRows[0]?.cnt || 0) > 0;
+            if (hasAppointments) {
+                return res.status(409).json({
+                    message: "Não é possível remover o serviço: existem agendamentos vinculados",
+                    error: "service_has_appointments"
+                });
+            }
+
             const { rows, rowCount } = await db.query(`
                 DELETE FROM services 
                 WHERE id = $1

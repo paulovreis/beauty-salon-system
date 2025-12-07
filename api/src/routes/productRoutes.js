@@ -32,7 +32,7 @@ router.get(
 router.post(
   "/categories",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateCategoryCreate,
   (req, res) => ProductCategoryController.create(req, res)
 );
@@ -41,7 +41,7 @@ router.post(
 router.put(
   "/categories/:id",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateCategoryUpdate,
   (req, res) => ProductCategoryController.update(req, res)
 );
@@ -77,7 +77,7 @@ router.get(
 router.post(
   "/",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateProductCreate,
   (req, res) => productController.addNewProduct(req, res)
 );
@@ -86,7 +86,7 @@ router.post(
 router.put(
   "/:id",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateProductUpdate,
   (req, res) => productController.updateProduct(req, res)
 );
@@ -122,7 +122,7 @@ router.get(
 router.post(
   "/:id/restock",
   authenticateJWT,
-  roleMiddleware(["owner", "manager"]),
+  roleMiddleware(["owner", "manager", "employee"]),
   validateRestockProduct,
   (req, res) => productController.restockProduct(req, res)
 );

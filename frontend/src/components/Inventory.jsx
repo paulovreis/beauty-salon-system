@@ -17,8 +17,10 @@ import { Alert, AlertDescription } from "./ui/alert"
 import { Progress } from "./ui/progress"
 import { Plus, Package, AlertTriangle, TrendingDown, Calendar, Edit, Trash2 } from "lucide-react"
 import { axiosWithAuth } from "./api/axiosWithAuth";
+import { getCurrentUserRole } from "../lib/auth";
 
 export default function Inventory() {
+  const role = getCurrentUserRole();
   const [inventory, setInventory] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true);
@@ -120,11 +122,31 @@ export default function Inventory() {
   }
 
   const getPromotionSuggestion = (item) => {
-    if (item.daysSinceLastSale > 30) {
-      return { type: "clearance", discount: 30, reason: "Sem vendas há mais de 30 dias" }
-    } else if (item.daysSinceLastSale > 14 && item.currentStock > item.minStock * 2) {
+    const days = Number(item.daysSinceLastSale) || 0;
+    const stock = Number(item.currentStock) || 0;
+    const min = Number(item.minStock) || 1;
+    const max = Number(item.maxStock) || 1;
+    const usage = Number(item.monthlyUsage) || 0;
+    const stockRatio = stock / max;
+    
+    // Produto sem vendas há muito tempo e com estoque alto
+    if (days > 60 && stockRatio > 0.7) {
+      return { type: "clearance", discount: 35, reason: "Sem vendas há mais de 60 dias com estoque elevado" }
+    }
+    // Sem vendas há 30+ dias
+    if (days > 30) {
+      return { type: "clearance", discount: 25, reason: "Sem vendas há mais de 30 dias" }
+    }
+    // Pouca saída com estoque alto (acima de 2x o mínimo)
+    if (days > 14 && stock > min * 2) {
       return { type: "promotion", discount: 20, reason: "Pouca saída com estoque alto" }
-    } else if (item.status === "slow_moving") {
+    }
+    // Uso mensal muito baixo e estoque acima da média
+    if (usage <= 1 && stockRatio > 0.5) {
+      return { type: "promotion", discount: 15, reason: "Baixa rotatividade" }
+    }
+    // Produto de movimentação lenta
+    if (item.status === "slow_moving" && days > 7) {
       return { type: "bundle", discount: 15, reason: "Agrupar com itens populares" }
     }
     return null
@@ -661,7 +683,9 @@ export default function Inventory() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Última Venda:</span>
-                    <p className="font-medium">{item.lastSold ? `${item.daysSinceLastSale}d atrás` : 'Nunca'}</p>
+                    <p className="font-medium">
+                      {!item.lastSold ? 'Nunca' : item.daysSinceLastSale === 0 ? 'Hoje' : item.daysSinceLastSale === 1 ? 'Ontem' : `${item.daysSinceLastSale}d atrás`}
+                    </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Uso Mensal:</span>
@@ -692,9 +716,11 @@ export default function Inventory() {
                     <Edit className="h-3 w-3 mr-1" />
                     Editar
                   </Button>
-                  <Button variant="outline" size="sm" className="bg-red-500 hover:bg-red-600 transition ease-in-out" onClick={() => handleDeleteItem(item)}>
-                    <Trash2 className="h-3 w-3 text-white" />
-                  </Button>
+                  {(role === 'owner' || role === 'manager') && (
+                    <Button variant="outline" size="sm" className="bg-red-500 hover:bg-red-600 transition ease-in-out" onClick={() => handleDeleteItem(item)}>
+                      <Trash2 className="h-3 w-3 text-white" />
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

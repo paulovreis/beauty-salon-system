@@ -28,10 +28,12 @@ import {
 import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar";
 import { Plus, Edit, Trash2, DollarSign } from "lucide-react";
 import { axiosWithAuth } from "./api/axiosWithAuth.js";
+import { getCurrentUserRole, getCurrentUserId } from "../lib/auth";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
 export default function Employees() {
+  const role = getCurrentUserRole();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -306,6 +308,7 @@ export default function Employees() {
             Gerencie a equipe e as estruturas de comissão
           </p>
         </div>
+        { (role === 'owner' || role === 'manager') && (
         <Dialog>
           <DialogTrigger asChild>
             <Button>
@@ -461,10 +464,11 @@ export default function Employees() {
             </div>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {employees.map((employee) => (
+        {(role === 'employee' ? employees.filter(e => e.user_id ? e.user_id === getCurrentUserId() : false) : employees).map((employee) => (
           <Card key={employee.id}>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -541,6 +545,7 @@ export default function Employees() {
               </div>
 
               <div className="flex gap-2">
+                {(role === 'owner' || role === 'manager') && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -550,6 +555,8 @@ export default function Employees() {
                   <Edit className="h-3 w-3 mr-1" />
                   Editar
                 </Button>
+                )}
+                {(role === 'owner' || role === 'manager') && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -558,8 +565,9 @@ export default function Employees() {
                   <Trash2 className="h-3 w-3 mr-1" />
                   Excluir
                 </Button>
+                )}
                 {/* Modal de edição de funcionário */}
-                {editModalOpen && editingEmployee && (
+                {editModalOpen && editingEmployee && (role === 'owner' || role === 'manager') && (
                   <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
                     <DialogContent className="max-w-2xl">
                       <DialogHeader>
@@ -734,6 +742,7 @@ export default function Employees() {
       </div>
 
       {/* Commission Summary */}
+      {(role === 'owner' || role === 'manager') && (
       <Card>
         <CardHeader>
           <CardTitle>Resumo de Comissões - Este Mês</CardTitle>
@@ -794,6 +803,7 @@ export default function Employees() {
           </div>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

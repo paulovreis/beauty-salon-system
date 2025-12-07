@@ -5,8 +5,10 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
+import { getCurrentUserRole } from "../lib/auth";
 
 export default function InventoryOutputs() {
+  const role = getCurrentUserRole();
   const [outputs, setOutputs] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -351,12 +353,14 @@ export default function InventoryOutputs() {
                           >
                             Editar
                           </button>
+                          {(role === 'owner' || role === 'manager') && (
                           <button
                             onClick={() => handleDeleteOutput(output.id)}
                             className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
                           >
                             Deletar
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

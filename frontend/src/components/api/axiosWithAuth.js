@@ -37,8 +37,8 @@ export async function axiosWithAuth(url, options = {}) {
     });
     return response;
   } catch (error) {
-    // Se recebeu 401 ou 403, tenta fazer refresh do token
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+    // Se recebeu 401, tenta fazer refresh do token
+    if (error.response && error.response.status === 401) {
       const newToken = await refreshToken();
       if (newToken) {
         // Tenta a requisição novamente com o novo token
@@ -59,6 +59,11 @@ export async function axiosWithAuth(url, options = {}) {
       } else {
         throw new Error('Sessão expirada. Faça login novamente.');
       }
+    }
+    // 403 deve indicar falta de permissão, não sessão expirada
+    if (error.response && error.response.status === 403) {
+      const backendMsg = error.response.data?.message || 'Acesso negado: permissão insuficiente';
+      throw new Error(backendMsg);
     }
     throw error;
   }

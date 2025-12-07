@@ -116,16 +116,34 @@ class ClientController {
     
     try {
       // Verifica se já existe cliente com o mesmo telefone ou email
-      const existing = await db.query(
-        `SELECT id, name FROM clients WHERE phone = $1 OR (email IS NOT NULL AND email = $2) LIMIT 1`, 
-        [phone, email]
-      );
+      const conditions = [];
+      const params = [];
+      let paramIndex = 1;
       
-      if (existing.rows.length) {
-        return res.status(409).json({ 
-          message: 'Cliente já existe com este telefone ou email', 
-          existing_client: existing.rows[0] 
-        });
+      if (phone) {
+        conditions.push(`phone = $${paramIndex}`);
+        params.push(phone);
+        paramIndex++;
+      }
+      
+      if (email) {
+        conditions.push(`email = $${paramIndex}`);
+        params.push(email);
+        paramIndex++;
+      }
+      
+      if (conditions.length > 0) {
+        const existing = await db.query(
+          `SELECT id, name FROM clients WHERE ${conditions.join(' OR ')} LIMIT 1`, 
+          params
+        );
+        
+        if (existing.rows.length) {
+          return res.status(409).json({ 
+            message: 'Cliente já existe com este telefone ou email', 
+            existing_client: existing.rows[0] 
+          });
+        }
       }
       
       const { rows } = await db.query(
@@ -189,13 +207,32 @@ class ClientController {
       }
 
       // Verifica se existe outro cliente com o mesmo telefone ou email
-      const existing = await db.query(
-        `SELECT id FROM clients WHERE (phone = $1 OR (email IS NOT NULL AND email = $2)) AND id != $3 LIMIT 1`, 
-        [phone, email, id]
-      );
+      const conditions = [];
+      const params = [];
+      let paramIndex = 1;
       
-      if (existing.rows.length) {
-        return res.status(409).json({ message: 'Já existe outro cliente com este telefone ou email' });
+      if (phone) {
+        conditions.push(`phone = $${paramIndex}`);
+        params.push(phone);
+        paramIndex++;
+      }
+      
+      if (email) {
+        conditions.push(`email = $${paramIndex}`);
+        params.push(email);
+        paramIndex++;
+      }
+      
+      if (conditions.length > 0) {
+        params.push(id);
+        const existing = await db.query(
+          `SELECT id FROM clients WHERE (${conditions.join(' OR ')}) AND id != $${paramIndex} LIMIT 1`, 
+          params
+        );
+        
+        if (existing.rows.length) {
+          return res.status(409).json({ message: 'Já existe outro cliente com este telefone ou email' });
+        }
       }
       
       const { rows } = await db.query(
