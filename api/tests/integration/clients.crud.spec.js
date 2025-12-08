@@ -77,15 +77,16 @@ describe('Clients CRUD operations', () => {
   });
 
   it('updates client phone number', async () => {
+    const newPhone = `11${Date.now().toString().slice(-8)}`;
     const res = await axios.put(`${API}/clients/${clientId1}`, {
       name: 'Test Client 1 Updated',
-      phone: '11988888888',
+      phone: newPhone,
       email: 'test1@example.com',
       address: 'Rua Teste 456'
     }, managerHeader);
     
     expect(res.status).toBe(200);
-    expect(res.data.phone).toBe('11988888888');
+    expect(res.data.phone).toBe(newPhone);
   });
 
   it('creates second client', async () => {
@@ -128,9 +129,10 @@ describe('Clients CRUD operations', () => {
   });
 
   it('allows updating client with null email', async () => {
+    const phoneNoEmail = `11${(Date.now()+1).toString().slice(-8)}`;
     const res = await axios.put(`${API}/clients/${clientId1}`, {
       name: 'Test Client 1 No Email',
-      phone: '11988888888',
+      phone: phoneNoEmail,
       email: null,
       address: 'Rua Teste 789'
     }, managerHeader);
