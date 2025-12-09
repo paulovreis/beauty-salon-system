@@ -360,6 +360,18 @@ class SchedulingController {
 			}
 			const { duration_minutes, recommended_price } = serviceResult.rows[0];
 
+			// Verificar se o funcionário está ativo
+			const employeeResult = await pool.query(
+				`SELECT status FROM employees WHERE id = $1`,
+				[employee_id]
+			);
+			if (employeeResult.rows.length === 0) {
+				return res.status(400).json({ message: "Funcionário não encontrado" });
+			}
+			if (employeeResult.rows[0].status !== 'active') {
+				return res.status(400).json({ message: "Não é possível agendar com funcionário inativo" });
+			}
+
 			await pool.query('BEGIN');
 
 			// Determina o clientId: usa o enviado ou cria/busca por telefone
@@ -513,6 +525,22 @@ class SchedulingController {
 				return res.status(400).json({ message: "Serviço inválido" });
 			}
 			const { duration_minutes, recommended_price } = serviceResult.rows[0];
+
+			// Verificar se o funcionário está ativo (apenas se foi alterado)
+			if (employee_id && employee_id !== old.employee_id) {
+				const employeeResult = await pool.query(
+					`SELECT status FROM employees WHERE id = $1`,
+					[final_employee_id]
+				);
+				if (employeeResult.rows.length === 0) {
+					await pool.query('ROLLBACK');
+					return res.status(400).json({ message: "Funcionário não encontrado" });
+				}
+				if (employeeResult.rows[0].status !== 'active') {
+					await pool.query('ROLLBACK');
+					return res.status(400).json({ message: "Não é possível agendar com funcionário inativo" });
+				}
+			}
 
 			// Impede conflito com outros agendamentos (exclui o próprio id)
 			const conflict = await pool.query(
