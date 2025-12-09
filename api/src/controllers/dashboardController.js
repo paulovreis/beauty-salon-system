@@ -260,14 +260,16 @@ class DashboardController {
           c.phone,
           c.total_visits,
           c.total_spent,
-          c.last_visit,
+          COALESCE(c.last_visit, MAX(a.appointment_date)) as last_visit,
           CASE 
-            WHEN c.last_visit >= CURRENT_DATE - INTERVAL '30 days' THEN 'Ativo'
-            WHEN c.last_visit >= CURRENT_DATE - INTERVAL '90 days' THEN 'Moderado'
+            WHEN COALESCE(c.last_visit, MAX(a.appointment_date)) >= CURRENT_DATE - INTERVAL '30 days' THEN 'Ativo'
+            WHEN COALESCE(c.last_visit, MAX(a.appointment_date)) >= CURRENT_DATE - INTERVAL '90 days' THEN 'Moderado'
             ELSE 'Inativo'
           END as status
         FROM clients c
+        LEFT JOIN appointments a ON a.client_id = c.id AND a.status = 'completed'
         WHERE c.total_visits > 0
+        GROUP BY c.id, c.name, c.phone, c.total_visits, c.total_spent, c.last_visit
         ORDER BY c.total_spent DESC
         LIMIT 20
       `);
@@ -301,13 +303,20 @@ class DashboardController {
 
       // Taxa de retenção
       const retentionAnalysis = await pool.query(`
+        WITH last_visits AS (
+          SELECT c.id,
+                 COALESCE(c.last_visit, MAX(a.appointment_date)) AS last_visit
+          FROM clients c
+          LEFT JOIN appointments a ON a.client_id = c.id AND a.status = 'completed'
+          WHERE c.total_visits > 0
+          GROUP BY c.id
+        )
         SELECT 
-          COUNT(CASE WHEN last_visit >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as active_last_30,
-          COUNT(CASE WHEN last_visit >= CURRENT_DATE - INTERVAL '60 days' THEN 1 END) as active_last_60,
-          COUNT(CASE WHEN last_visit >= CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as active_last_90,
+          COUNT(CASE WHEN lv.last_visit >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as active_last_30,
+          COUNT(CASE WHEN lv.last_visit <  CURRENT_DATE - INTERVAL '30 days' AND lv.last_visit >= CURRENT_DATE - INTERVAL '60 days' THEN 1 END) as active_last_60,
+          COUNT(CASE WHEN lv.last_visit <  CURRENT_DATE - INTERVAL '60 days' AND lv.last_visit >= CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as active_last_90,
           COUNT(*) as total_customers
-        FROM clients
-        WHERE total_visits > 0
+        FROM last_visits lv
       `);
 
       res.json({
@@ -679,22 +688,33 @@ class DashboardController {
 
       // Clientes em risco de abandono
       const churnRisk = await pool.query(`
+        WITH last_visits AS (
+          SELECT c.id,
+                 c.name,
+                 c.phone,
+                 c.total_visits,
+                 c.total_spent,
+                 COALESCE(c.last_visit, MAX(a.appointment_date)) AS last_visit
+          FROM clients c
+          LEFT JOIN appointments a ON a.client_id = c.id AND a.status = 'completed'
+          WHERE c.total_visits > 0
+          GROUP BY c.id, c.name, c.phone, c.total_visits, c.total_spent, c.last_visit
+        )
         SELECT 
-          c.name,
-          c.phone,
-          c.last_visit,
-          c.total_visits,
-          c.total_spent,
-          CURRENT_DATE - c.last_visit as days_since_last_visit,
+          name,
+          phone,
+          last_visit,
+          total_visits,
+          total_spent,
+          (CURRENT_DATE - last_visit) as days_since_last_visit,
           CASE 
-            WHEN CURRENT_DATE - c.last_visit > 180 THEN 'Alto Risco'
-            WHEN CURRENT_DATE - c.last_visit > 90 THEN 'Médio Risco'
-            WHEN CURRENT_DATE - c.last_visit > 60 THEN 'Baixo Risco'
+            WHEN (CURRENT_DATE - last_visit) > 180 THEN 'Alto Risco'
+            WHEN (CURRENT_DATE - last_visit) > 90 THEN 'Médio Risco'
+            WHEN (CURRENT_DATE - last_visit) > 60 THEN 'Baixo Risco'
             ELSE 'Ativo'
           END as churn_risk
-        FROM clients c
-        WHERE c.total_visits > 0
-          AND c.last_visit IS NOT NULL
+        FROM last_visits
+        WHERE last_visit IS NOT NULL
         ORDER BY days_since_last_visit DESC
         LIMIT 50
       `);
