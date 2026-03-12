@@ -31,8 +31,11 @@ import { axiosWithAuth } from "./api/axiosWithAuth.js";
 import { getCurrentUserRole, getCurrentUserId } from "../lib/auth";
 import { useAlert } from "../hooks/useAlert";
 import { AlertDisplay } from "./AlertDisplay";
+import { forceHttpsWhenPageIsHttps } from "../utils/forceHttpsWhenPageIsHttps";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const API_URL = forceHttpsWhenPageIsHttps(
+  process.env.REACT_APP_API_URL || "http://localhost:5000"
+);
 
 export default function Employees() {
   const role = getCurrentUserRole();

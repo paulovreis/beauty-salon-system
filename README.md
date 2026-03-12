@@ -31,8 +31,13 @@ O compose inclui o serviço `db-bootstrap` que cria o database `evolution` de fo
 No servidor, ajuste as URLs públicas (origins) no arquivo `.env` da raiz para:
 
 - `FRONTEND_PUBLIC_ORIGIN` (ex.: `https://stylehub.helderporto.com`)
+- `FRONTEND_PUBLIC_ORIGINS` (CORS; ex.: `https://stylehub.helderporto.com,https://www.stylehub.helderporto.com`)
 - `API_PUBLIC_ORIGIN` (ex.: `https://stylehubapi.helderporto.com`)
-- `EVOLUTION_PUBLIC_ORIGIN` (opcional, se você expor a Evolution publicamente)
+- `EVOLUTION_PUBLIC_ORIGIN` (ex.: `https://evolution.stylehub.helderporto.com`)
+
+Importante: em produção use sempre `https://...` nessas URLs públicas para evitar erro de Mixed Content no navegador.
+
+O frontend também força automaticamente HTTPS nas URLs da API/Evolution quando a página estiver em HTTPS (guardrail contra configuração incorreta).
 
 Se preferir, você também pode exportar essas variáveis no ambiente do servidor antes de subir o compose.
 

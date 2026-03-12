@@ -2,9 +2,13 @@
 // Este arquivo contém funções auxiliares para conectar WhatsApp com clientes e agendamentos
 // EvolutionAPI 2.3.6 - Configuração Otimizada
 
+import { forceHttpsWhenPageIsHttps } from './forceHttpsWhenPageIsHttps';
+
 // Configuração da Evolution API
 const EVOLUTION_CONFIG = {
-  baseURL: process.env.REACT_APP_EVOLUTION_API_URL || 'http://localhost:8080',
+  baseURL: forceHttpsWhenPageIsHttps(
+    process.env.REACT_APP_EVOLUTION_API_URL || 'http://localhost:8080'
+  ),
   apiKey: process.env.REACT_APP_EVOLUTION_API_KEY,
   defaultInstance: 'salao-principal'
 };

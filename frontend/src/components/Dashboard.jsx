@@ -4,8 +4,11 @@ import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { DollarSign, TrendingUp, Package, AlertTriangle, Scissors } from "lucide-react"
 import api from "../components/api/axios.js"
+import { forceHttpsWhenPageIsHttps } from "../utils/forceHttpsWhenPageIsHttps";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000"
+const API_URL = forceHttpsWhenPageIsHttps(
+  process.env.REACT_APP_API_URL || "http://localhost:5000"
+)
 
 // Função de requisição autenticada usando axios
 async function axiosWithAuth(url, options = {}) {

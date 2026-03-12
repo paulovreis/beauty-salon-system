@@ -67,7 +67,7 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       NOME_SALAO: ${NOME_SALAO:-Fada Madrinha}
-      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}"
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       FRONTEND_URL: "${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}"
     ports:
       - "${API_PORT_HOST:-15000}:5000"
@@ -114,7 +114,7 @@ services:
       DB_NAME: ${DB_NAME:-beauty_salon}
       JWT_SECRET: ${JWT_SECRET:-supersecretkey}
       INIT_DB: "true"
-      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}"
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       PORT: 5000
       TEST_API_URL: http://localhost:5000
     depends_on:

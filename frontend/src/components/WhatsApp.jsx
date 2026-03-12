@@ -17,9 +17,12 @@ import {
 } from 'lucide-react';
 import { useAlert } from '../hooks/useAlert';
 import { AlertDisplay } from './AlertDisplay';
+import { forceHttpsWhenPageIsHttps } from '../utils/forceHttpsWhenPageIsHttps';
 
 // Configuração da API da Evolution - EvolutionAPI 2.3.6
-const EVOLUTION_API_URL = process.env.REACT_APP_EVOLUTION_API_URL || 'http://localhost:8080';
+const EVOLUTION_API_URL = forceHttpsWhenPageIsHttps(
+  process.env.REACT_APP_EVOLUTION_API_URL || 'http://localhost:8080'
+);
 const EVOLUTION_API_KEY = process.env.REACT_APP_EVOLUTION_API_KEY;
 
 // Cliente axios para Evolution API

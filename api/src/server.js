@@ -28,8 +28,22 @@ if (fs.existsSync(rootEnvPath)) {
 
 const app = express();
 
+function parseCorsOrigin(corsOriginEnv) {
+  const value = (corsOriginEnv || '*').trim();
+  if (!value || value === '*') return '*';
+
+  const parts = value
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return '*';
+  if (parts.length === 1) return parts[0];
+  return parts;
+}
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: parseCorsOrigin(process.env.CORS_ORIGIN),
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
