@@ -36,7 +36,6 @@ import { AlertDisplay } from "./AlertDisplay";
 export default function ServicesProducts() {
   const role = getCurrentUserRole();
   const { alert, showSuccess, showError, clearAlert } = useAlert();
-  const baseUrl = "http://localhost:5000"; // Base URL for API requests
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
