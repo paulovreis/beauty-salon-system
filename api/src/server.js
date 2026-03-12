@@ -1,6 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
 import pool from './db/postgre.js';
 import authRoutes from './routes/authRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
@@ -17,6 +19,12 @@ import schedulerService from './services/schedulerService.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
+// Suporta .env único na raiz do repositório quando a API é executada a partir de /api
+// (ex.: `cd api` -> `npm start`). Em Docker, as env vars vêm do docker-compose.
+const rootEnvPath = path.resolve(process.cwd(), '..', '.env');
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath, override: false });
+}
 
 const app = express();
 
