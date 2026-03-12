@@ -19,6 +19,13 @@ Este projeto foi configurado para evitar conflito de portas na VPS mudando apena
 
 Postgres e Redis não são publicados no host (ficam acessíveis apenas dentro da rede Docker).
 
+## EvolutionAPI: erro "database evolution does not exist"
+
+Se você já subiu o Postgres antes (volume `db_data` já inicializado), scripts em `/docker-entrypoint-initdb.d` não rodam novamente.
+O compose inclui o serviço `db-bootstrap` que cria o database `evolution` de forma idempotente.
+
+- Execute uma vez: `docker compose up -d db-bootstrap`
+
 ## VPS (domínio/IP)
 
 No servidor, ajuste as URLs públicas (origins) no arquivo `.env` da raiz para:
