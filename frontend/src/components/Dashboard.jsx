@@ -75,9 +75,6 @@ export default function Dashboard() {
     fetchData()
   }, [])
 
-  if (loading) return <div className="p-4 md:p-8 text-center">Carregando dashboard...</div>
-  if (error) return <div className="p-4 md:p-8 text-center text-red-600">{error}</div>
-
   const expenseTotal = useMemo(() => {
     if (!Array.isArray(expenses) || expenses.length === 0) return 0
     return expenses.reduce((acc, e) => acc + Number(e.total || 0), 0)
@@ -99,6 +96,9 @@ export default function Dashboard() {
       lowStockItems: stats.inventoryStats?.lowStockItems || 0,
     }
   }, [stats, revenue, expenseTotal])
+
+  if (loading) return <div className="p-4 md:p-8 text-center">Carregando dashboard...</div>
+  if (error) return <div className="p-4 md:p-8 text-center text-red-600">{error}</div>
 
   return (
     <div className="space-y-6 p-4 md:p-6">
