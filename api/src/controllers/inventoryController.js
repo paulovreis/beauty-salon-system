@@ -1,4 +1,5 @@
 import pool from '../db/postgre.js';
+import buildErrorResponse from '../utils/errorResponse.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
@@ -8,8 +9,14 @@ class InventoryController {
   async list(req, res) {
     const db = getPool(req);
     try {
-      const { page = 1, limit = 50, category_id, low_stock_only } = req.query;
-      const offset = (page - 1) * limit;
+      const { category_id, low_stock_only } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = [];
       let queryParams = [];
@@ -80,15 +87,15 @@ class InventoryController {
       res.json({
         products: rows,
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
       console.error('Erro ao buscar inventário:', err);
-      res.status(500).json({ message: 'Erro ao buscar inventário', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar inventário', ...buildErrorResponse(err) });
     }
   }
 
@@ -101,7 +108,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar produtos com baixo estoque', error: err.message });
+      console.error('Erro ao buscar produtos com baixo estoque:', err);
+      res.status(500).json({ message: 'Erro ao buscar produtos com baixo estoque', ...buildErrorResponse(err) });
     }
   }
 
@@ -114,7 +122,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar movimentações', error: err.message });
+      console.error('Erro ao buscar movimentações:', err);
+      res.status(500).json({ message: 'Erro ao buscar movimentações', ...buildErrorResponse(err) });
     }
   }
 
@@ -168,7 +177,8 @@ class InventoryController {
 
       res.status(201).json(rows[0]);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao registrar movimentação', error: err.message });
+      console.error('Erro ao registrar movimentação:', err);
+      res.status(500).json({ message: 'Erro ao registrar movimentação', ...buildErrorResponse(err) });
     }
   }
 
@@ -187,7 +197,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar sugestões de promoção', error: err.message });
+      console.error('Erro ao buscar sugestões de promoção:', err);
+      res.status(500).json({ message: 'Erro ao buscar sugestões de promoção', ...buildErrorResponse(err) });
     }
   }
 
@@ -202,7 +213,8 @@ class InventoryController {
       );
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar histórico do produto', error: err.message });
+      console.error('Erro ao buscar histórico do produto:', err);
+      res.status(500).json({ message: 'Erro ao buscar histórico do produto', ...buildErrorResponse(err) });
     }
   }
 
@@ -228,7 +240,8 @@ class InventoryController {
       res.json({ message: 'Atualização em lote realizada com sucesso' });
     } catch (err) {
       await client.query('ROLLBACK');
-      res.status(500).json({ message: 'Erro na atualização em lote', error: err.message });
+      console.error('Erro na atualização em lote:', err);
+      res.status(500).json({ message: 'Erro na atualização em lote', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -238,8 +251,14 @@ class InventoryController {
   async listOutputs(req, res) {
     const db = getPool(req);
     try {
-      const { page = 1, limit = 50, product_id, start_date, end_date, output_type } = req.query;
-      const offset = (page - 1) * limit;
+      const { product_id, start_date, end_date, output_type } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = ["sm.movement_type = 'output'"];
       let queryParams = [];
@@ -297,15 +316,15 @@ class InventoryController {
       res.json({
         outputs: rows,
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
       console.error('Erro ao listar saídas:', err);
-      res.status(500).json({ message: 'Erro ao listar saídas', error: err.message });
+      res.status(500).json({ message: 'Erro ao listar saídas', ...buildErrorResponse(err) });
     }
   }
 
@@ -336,7 +355,7 @@ class InventoryController {
       res.json(rows[0]);
     } catch (err) {
       console.error('Erro ao buscar saída:', err);
-      res.status(500).json({ message: 'Erro ao buscar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar saída', ...buildErrorResponse(err) });
     }
   }
 
@@ -487,7 +506,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao registrar saída:', err);
-      res.status(500).json({ message: 'Erro ao registrar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao registrar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -659,7 +678,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao atualizar saída:', err);
-      res.status(500).json({ message: 'Erro ao atualizar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao atualizar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -718,7 +737,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao deletar saída:', err);
-      res.status(500).json({ message: 'Erro ao deletar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao deletar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -786,7 +805,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao reabastecer produto:', err);
-      res.status(500).json({ message: 'Erro ao reabastecer produto', error: err.message });
+      res.status(500).json({ message: 'Erro ao reabastecer produto', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }

@@ -1,14 +1,21 @@
 import pool from "../db/postgre.js";
 import whatsappService from "../services/whatsappNotificationService.js";
+import buildErrorResponse from '../utils/errorResponse.js';
 
 class ProductController {
   constructor() {}
 
   async getAllProducts(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     try {
-      const { page = 1, limit = 50, category_id, search, include_inactive } = req.query;
-      const offset = (page - 1) * limit;
+      const { category_id, search, include_inactive } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = [];
       let queryParams = [];
@@ -69,22 +76,20 @@ class ProductController {
       res.json({
         products: rows,
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
-      console.log("Erro ao buscar produtos:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar produtos", error: err.message });
+      console.error("Erro ao buscar produtos:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos", ...buildErrorResponse(err) });
     }
   }
 
   async getProductById(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rows } = await db.query(
@@ -104,15 +109,13 @@ class ProductController {
       }
       res.json(rows[0]);
     } catch (err) {
-      console.log("Erro ao buscar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar produto", error: err.message });
+      console.error("Erro ao buscar produto:", err);
+      res.status(500).json({ message: "Erro ao buscar produto", ...buildErrorResponse(err) });
     }
   }
 
   async addNewProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const {
       name,
       description,
@@ -176,15 +179,13 @@ class ProductController {
       
       res.status(201).json(rows[0]);
     } catch (err) {
-      console.log("Erro ao criar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao criar produto", error: err.message });
+      console.error("Erro ao criar produto:", err);
+      res.status(500).json({ message: "Erro ao criar produto", ...buildErrorResponse(err) });
     }
   }
 
   async updateProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     const {
       name,
@@ -293,15 +294,13 @@ class ProductController {
 
       res.json(rows[0]);
     } catch (err) {
-      console.log("Erro ao atualizar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar produto", error: err.message });
+      console.error("Erro ao atualizar produto:", err);
+      res.status(500).json({ message: "Erro ao atualizar produto", ...buildErrorResponse(err) });
     }
   }
 
   async deleteProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rowCount } = await db.query(
@@ -313,15 +312,13 @@ class ProductController {
       }
       res.json({ message: "Produto removido com sucesso" });
     } catch (err) {
-      console.log("Erro ao remover produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao remover produto", error: err.message });
+      console.error("Erro ao remover produto:", err);
+      res.status(500).json({ message: "Erro ao remover produto", ...buildErrorResponse(err) });
     }
   }
 
   async getProductsByCategory(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { categoryId } = req.params;
     try {
       const { rows } = await db.query(
@@ -339,38 +336,29 @@ class ProductController {
       );
       res.json(rows);
     } catch (err) {
-      console.log("Erro ao buscar produtos por categoria:", err);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar produtos por categoria",
-          error: err.message,
-        });
+      console.error("Erro ao buscar produtos por categoria:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos por categoria", ...buildErrorResponse(err) });
     }
     }
 
 
   // PRODUTOS COM BAIXO ESTOQUE
   async getLowStock(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     try {
       const { rows } = await db.query(
         "SELECT * FROM products WHERE current_stock <= min_stock_level ORDER BY current_stock ASC"
       );
       res.json(rows);
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar produtos com baixo estoque",
-          error: err.message,
-        });
+      console.error("Erro ao buscar produtos com baixo estoque:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos com baixo estoque", ...buildErrorResponse(err) });
     }
   }
 
   // REPOSIÇÃO DE ESTOQUE
   async restockProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     const { quantity, unit_cost, notes } = req.body;
     try {
@@ -406,9 +394,8 @@ class ProductController {
       
       res.json(rows[0]);
     } catch (err) {
-      res
-        .status(500)
-        .json({ message: "Erro ao repor estoque", error: err.message });
+      console.error("Erro ao repor estoque:", err);
+      res.status(500).json({ message: "Erro ao repor estoque", ...buildErrorResponse(err) });
     }
   }
 
@@ -430,7 +417,7 @@ class ProductController {
 
   // MOVIMENTAÇÕES DE ESTOQUE
   async getProductMovements(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rows } = await db.query(
@@ -439,12 +426,8 @@ class ProductController {
       );
       res.json(rows);
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar movimentações do produto",
-          error: err.message,
-        });
+      console.error("Erro ao buscar movimentações do produto:", err);
+      res.status(500).json({ message: "Erro ao buscar movimentações do produto", ...buildErrorResponse(err) });
     }
   }
 }

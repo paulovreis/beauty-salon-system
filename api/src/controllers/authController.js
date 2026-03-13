@@ -3,8 +3,12 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import pool from '../db/postgre.js';
+import buildErrorResponse from '../utils/errorResponse.js';
 
 dotenv.config();
+
+const getPool = (req) => req.pool || pool;
 
 // Função auxiliar para enviar email
 async function sendPasswordResetEmail(email, resetToken) {
@@ -51,7 +55,7 @@ async function sendPasswordResetEmail(email, resetToken) {
         };
 
         const result = await transporter.sendMail(mailOptions);
-        console.log('Email de reset enviado:', result.messageId);
+        void result;
         return true;
     } catch (error) {
         console.error('Erro ao enviar email:', error);
@@ -65,16 +69,13 @@ class AuthController {
     async login(req, res) {
         try{
             const { email, password } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!email || !password) {
                 return res.status(400).json({ message: 'Email and password are required' });
             }
 
-            const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+            const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
             const user = rows[0];
             if (!user) {
                 return res.status(401).json({ message: 'Invalid email or password' });
@@ -98,23 +99,20 @@ class AuthController {
             });
         }catch(error) {
             console.error('Login error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async register(req, res) {
         try {
             const { email, password, role } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!email || !password) {
                 return res.status(400).json({ message: 'Email and password are required' });
             }
 
-            const { rows: existingRows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+            const { rows: existingRows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
             if (existingRows.length > 0) {
                 return res.status(409).json({ message: 'User already exists' });
             }
@@ -126,7 +124,7 @@ class AuthController {
                 VALUES ($1, $2, $3)
                 RETURNING id, email, role
             `;
-            const { rows: newUserRows } = await pool.query(insertQuery, [email, hashedPassword, role || 'employee']);
+            const { rows: newUserRows } = await db.query(insertQuery, [email, hashedPassword, role || 'employee']);
             const newUser = newUserRows[0];
 
             return res.status(201).json({
@@ -139,7 +137,7 @@ class AuthController {
             });
         } catch (error) {
             console.error('Registration error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
@@ -161,7 +159,7 @@ class AuthController {
                 if (err.name === 'TokenExpiredError') {
                     decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 } else {
-                    return res.status(403).json({ message: 'Invalid token' });
+                    return res.status(401).json({ message: 'Invalid token' });
                 }
             }
 
@@ -178,17 +176,14 @@ class AuthController {
             });
         } catch (error) {
             console.error('Refresh token error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async forgotPassword(req, res) {
         try {
             const { email } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             // Validate input
             if (!email) {
@@ -196,7 +191,7 @@ class AuthController {
             }
 
             // Find user by email
-            const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+            const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
             const user = rows[0];
             
             if (!user) {
@@ -208,7 +203,7 @@ class AuthController {
             const resetToken = crypto.randomBytes(32).toString('hex');
             const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000);
 
-            await pool.query(
+            await db.query(
                 'UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3',
                 [resetToken, resetTokenExpires, email]
             );
@@ -223,23 +218,20 @@ class AuthController {
             });
         } catch (error) {
             console.error('Forgot password error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async resetPassword(req, res) {
         try {
             const { token, newPassword } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!token || !newPassword) {
                 return res.status(400).json({ message: 'Token and new password are required' });
             }
 
-            const { rows } = await pool.query(
+            const { rows } = await db.query(
                 'SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > NOW()',
                 [token]
             );
@@ -252,24 +244,21 @@ class AuthController {
             // Hash new password
             const hashedPassword = bcrypt.hashSync(newPassword, 8);
 
-            await pool.query('UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE email = $2', [hashedPassword, user.email]);
+            await db.query('UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE email = $2', [hashedPassword, user.email]);
 
             return res.status(200).json({ message: 'Password reset successfully' });
         } catch (error) {
             console.error('Reset password error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async validateResetToken(req, res) {
         try {
             const { token } = req.params;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
-            const { rows } = await pool.query(
+            const { rows } = await db.query(
                 'SELECT id FROM users WHERE reset_token = $1 AND reset_token_expires > NOW()',
                 [token]
             );
@@ -281,7 +270,7 @@ class AuthController {
             return res.status(200).json({ message: 'Token is valid' });
         } catch (error) {
             console.error('Validate reset token error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 }

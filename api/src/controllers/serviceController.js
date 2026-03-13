@@ -1,10 +1,11 @@
 import pool from '../db/postgre.js';
 import whatsappService from '../services/whatsappNotificationService.js';
+import buildErrorResponse from '../utils/errorResponse.js';
 
 class ServiceController {
   constructor(){}
     async getAllServices(req, res) {
-        const db = req.pool;
+                const db = req.pool || pool;
         try{
             const { rows } = await db.query(`
                 SELECT s.id, s.name, s.description, s.base_cost, s.recommended_price, 
@@ -16,13 +17,13 @@ class ServiceController {
             `);
             res.json(rows);
         }catch (err) {
-            console.log("Erro ao buscar serviços:", err);
-            res.status(500).json({ message: "Erro ao buscar serviços", error: err.message });
+            console.error("Erro ao buscar serviços:", err);
+            res.status(500).json({ message: "Erro ao buscar serviços", ...buildErrorResponse(err) });
         }
     }
 
     async getServiceById(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id } = req.params;
         try {
             const { rows } = await db.query(`
@@ -38,13 +39,13 @@ class ServiceController {
             }
             res.json(rows[0]);
         } catch (err) {
-            console.log("Erro ao buscar serviço:", err);
-            res.status(500).json({ message: "Erro ao buscar serviço", error: err.message });
+            console.error("Erro ao buscar serviço:", err);
+            res.status(500).json({ message: "Erro ao buscar serviço", ...buildErrorResponse(err) });
         }
     }
 
     async getServicesByName(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { name } = req.query;
         try {
             const { rows } = await db.query(`
@@ -58,13 +59,13 @@ class ServiceController {
             `, [`%${name}%`]);
             res.json(rows);
         } catch (err) {
-            console.log("Erro ao buscar serviços por nome:", err);
-            res.status(500).json({ message: "Erro ao buscar serviços por nome", error: err.message });
+            console.error("Erro ao buscar serviços por nome:", err);
+            res.status(500).json({ message: "Erro ao buscar serviços por nome", ...buildErrorResponse(err) });
         }
     }
 
     async createService(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { name, description, base_cost, recommended_price, duration_minutes, profit_margin, category_id } = req.body;
         try {
             const { rows } = await db.query(`
@@ -92,13 +93,13 @@ class ServiceController {
             
             res.status(201).json(rows[0]);
         } catch (err) {
-            console.log("Erro ao criar serviço:", err);
-            res.status(500).json({ message: "Erro ao criar serviço", error: err.message });
+            console.error("Erro ao criar serviço:", err);
+            res.status(500).json({ message: "Erro ao criar serviço", ...buildErrorResponse(err) });
         }
     }
 
     async updateService(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id } = req.params;
         const { name, description, base_cost, recommended_price, duration_minutes, profit_margin, category_id, is_active } = req.body;
         try {
@@ -135,13 +136,13 @@ class ServiceController {
 
             res.json(rows[0]);
         } catch (err) {
-            console.log("Erro ao atualizar serviço:", err);
-            res.status(500).json({ message: "Erro ao atualizar serviço", error: err.message });
+            console.error("Erro ao atualizar serviço:", err);
+            res.status(500).json({ message: "Erro ao atualizar serviço", ...buildErrorResponse(err) });
         }
     }
 
     async deleteService(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id } = req.params;
         try {
             // Verifica se existem agendamentos vinculados
@@ -178,13 +179,13 @@ class ServiceController {
             }
             res.json({ message: "Serviço removido com sucesso" });
         } catch (err) {
-            console.log("Erro ao remover serviço:", err);
-            res.status(500).json({ message: "Erro ao remover serviço", error: err.message });
+            console.error("Erro ao remover serviço:", err);
+            res.status(500).json({ message: "Erro ao remover serviço", ...buildErrorResponse(err) });
         }
     }
 
     async getServiceSpecialties(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id } = req.params;
         try {
             const { rows } = await db.query(`
@@ -196,13 +197,13 @@ class ServiceController {
             `, [id]);
             res.json(rows);
         } catch (err) {
-            console.log("Erro ao buscar especialidades do serviço:", err);
-            res.status(500).json({ message: "Erro ao buscar especialidades do serviço", error: err.message });
+            console.error("Erro ao buscar especialidades do serviço:", err);
+            res.status(500).json({ message: "Erro ao buscar especialidades do serviço", ...buildErrorResponse(err) });
         }
     }
 
     async addServiceSpecialty(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id } = req.params;
         const { employee_id, commission_rate } = req.body;
         try {
@@ -213,13 +214,13 @@ class ServiceController {
             `, [employee_id, id, commission_rate]);
             res.status(201).json(rows[0]);
         } catch (err) {
-            console.log("Erro ao adicionar especialidade ao serviço:", err);
-            res.status(500).json({ message: "Erro ao adicionar especialidade ao serviço", error: err.message });
+            console.error("Erro ao adicionar especialidade ao serviço:", err);
+            res.status(500).json({ message: "Erro ao adicionar especialidade ao serviço", ...buildErrorResponse(err) });
         }
     }
 
     async updateServiceSpecialty(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { id, specialtyId } = req.params;
         const { commission_rate } = req.body;
         try {
@@ -234,13 +235,13 @@ class ServiceController {
             }
             res.json(rows[0]);
         } catch (err) {
-            console.log("Erro ao atualizar especialidade do serviço:", err);
-            res.status(500).json({ message: "Erro ao atualizar especialidade do serviço", error: err.message });
+            console.error("Erro ao atualizar especialidade do serviço:", err);
+            res.status(500).json({ message: "Erro ao atualizar especialidade do serviço", ...buildErrorResponse(err) });
         }
     }
 
     async getServicesByCategory(req, res) {
-        const db = req.pool;
+        const db = req.pool || pool;
         const { categoryId } = req.params;
         try {
             const { rows } = await db.query(`
@@ -252,8 +253,8 @@ class ServiceController {
             `, [categoryId]);
             res.json(rows);
         } catch (err) {
-            console.log("Erro ao buscar serviços por categoria:", err);
-            res.status(500).json({ message: "Erro ao buscar serviços por categoria", error: err.message });
+            console.error("Erro ao buscar serviços por categoria:", err);
+            res.status(500).json({ message: "Erro ao buscar serviços por categoria", ...buildErrorResponse(err) });
         }
     }
 }

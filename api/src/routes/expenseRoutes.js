@@ -2,6 +2,7 @@ import express from 'express';
 import authenticateJWT from '../middlewares/authenticateJWT.js';
 import roleMiddleware from '../middlewares/roleMiddleware.js';
 import ExpenseController from '../controllers/expenseController.js';
+import paginationMiddleware from '../middlewares/paginationMiddleware.js';
 import { 
   validateExpenseCreate, 
   validateExpenseUpdate, 
@@ -15,6 +16,7 @@ router.get(
   '/', 
   authenticateJWT, 
   roleMiddleware(['owner', 'manager', 'employee']),
+  paginationMiddleware(),
   validateExpenseQuery,
   (req, res) => ExpenseController.list(req, res)
 );

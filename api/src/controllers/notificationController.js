@@ -1,5 +1,8 @@
 import pool from '../db/postgre.js';
 import whatsappService from '../services/whatsappNotificationService.js';
+import buildErrorResponse from '../utils/errorResponse.js';
+
+const getPool = (req) => req.pool || pool;
 
 // Lista centralizada dos tipos válidos (mantém sincronizado com getNotificationTypes)
 const VALID_NOTIFICATION_TYPES = [
@@ -51,6 +54,7 @@ function normalizeTypes(types) {
 export const getEmployeeNotificationSettings = async (req, res) => {
   try {
     const { employeeId } = req.params;
+    const db = getPool(req);
     
     // Verificar se o usuário pode acessar essas configurações
     if (req.user.role !== 'owner' && req.user.role !== 'manager' && req.user.employee_id !== parseInt(employeeId)) {
@@ -60,7 +64,7 @@ export const getEmployeeNotificationSettings = async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT 
         en.*,
         e.name as employee_name,
@@ -80,13 +84,13 @@ export const getEmployeeNotificationSettings = async (req, res) => {
         'cancellations'
       ];
 
-      const insertResult = await pool.query(`
+      const insertResult = await db.query(`
         INSERT INTO employee_notifications (employee_id, notification_types, enabled)
         VALUES ($1, $2, true)
         RETURNING *
       `, [employeeId, JSON.stringify(defaultTypes)]);
 
-      const employeeResult = await pool.query(`
+      const employeeResult = await db.query(`
         SELECT e.name, u.role 
         FROM employees e 
         LEFT JOIN users u ON u.id = e.user_id 
@@ -122,7 +126,8 @@ export const getEmployeeNotificationSettings = async (req, res) => {
     console.error('Erro ao buscar configurações de notificação:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -132,6 +137,7 @@ export const updateEmployeeNotificationSettings = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const { notification_types, enabled } = req.body;
+    const db = getPool(req);
 
     // Verificar se o usuário pode atualizar essas configurações
     if (req.user.role !== 'owner' && req.user.role !== 'manager' && req.user.employee_id !== parseInt(employeeId)) {
@@ -160,7 +166,7 @@ export const updateEmployeeNotificationSettings = async (req, res) => {
         .filter(t => !VALID_NOTIFICATION_TYPES.includes(t));
     }
 
-    const result = await pool.query(`
+    const result = await db.query(`
       UPDATE employee_notifications 
       SET 
         notification_types = COALESCE($2, notification_types),
@@ -172,7 +178,7 @@ export const updateEmployeeNotificationSettings = async (req, res) => {
 
     if (result.rows.length === 0) {
       // Criar se não existir
-      const insertResult = await pool.query(`
+      const insertResult = await db.query(`
         INSERT INTO employee_notifications (employee_id, notification_types, enabled)
         VALUES ($1, $2, $3)
         RETURNING *
@@ -196,7 +202,8 @@ export const updateEmployeeNotificationSettings = async (req, res) => {
     console.error('Erro ao atualizar configurações de notificação:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -204,6 +211,7 @@ export const updateEmployeeNotificationSettings = async (req, res) => {
 // Listar configurações de notificação de todos os funcionários (apenas owner/manager)
 export const getAllEmployeeNotificationSettings = async (req, res) => {
   try {
+    const db = getPool(req);
     // Apenas owner e manager podem ver todas as configurações
     if (req.user.role !== 'owner' && req.user.role !== 'manager') {
       return res.status(403).json({ 
@@ -212,7 +220,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT 
         e.id as employee_id,
         e.name as employee_name,
@@ -232,7 +240,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
     const defaultTypes = ['daily_schedule', 'new_appointments', 'appointment_changes', 'cancellations'];
 
     for (const employee of employeesWithoutConfig) {
-      await pool.query(`
+      await db.query(`
         INSERT INTO employee_notifications (employee_id, notification_types, enabled)
         VALUES ($1, $2, true)
         ON CONFLICT (employee_id) DO NOTHING
@@ -240,7 +248,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
     }
 
     // Buscar novamente com as configurações criadas
-    const finalResult = await pool.query(`
+    const finalResult = await db.query(`
       SELECT 
         e.id as employee_id,
         e.name as employee_name,
@@ -276,7 +284,8 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
     console.error('Erro ao buscar configurações de notificação de funcionários:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -365,7 +374,8 @@ export const getNotificationTypes = async (req, res) => {
     console.error('Erro ao buscar tipos de notificação:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -398,7 +408,8 @@ export const sendDailyNotifications = async (req, res) => {
       const finalDate = targetDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
       res.status(500).json({
         success: false,
-        message: `Erro ao enviar notificações diárias: ${whatsappError.message}`,
+        message: 'Erro ao enviar notificações diárias',
+        ...buildErrorResponse(whatsappError),
         date: finalDate
       });
     }
@@ -406,7 +417,8 @@ export const sendDailyNotifications = async (req, res) => {
     console.error('Erro ao processar notificações diárias:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -414,6 +426,7 @@ export const sendDailyNotifications = async (req, res) => {
 // Verificar e enviar notificações de estoque baixo (apenas owner/manager)
 export const checkLowStock = async (req, res) => {
   try {
+    const db = getPool(req);
     // Verificar se o usuário pode executar esta ação
     if (req.user.role !== 'owner' && req.user.role !== 'manager') {
       return res.status(403).json({ 
@@ -421,9 +434,6 @@ export const checkLowStock = async (req, res) => {
         message: 'Acesso negado' 
       });
     }
-
-    const pool = (await import('../db/postgre.js')).default;
-    const dynamicWhatsappService = (await import('../services/whatsappNotificationService.js')).default;
 
     // Buscar produtos com estoque baixo
     const lowStockQuery = `
@@ -434,7 +444,7 @@ export const checkLowStock = async (req, res) => {
       ORDER BY current_stock ASC
     `;
 
-    const result = await pool.query(lowStockQuery);
+    const result = await db.query(lowStockQuery);
     const lowStockProducts = result.rows;
 
     if (lowStockProducts.length === 0) {
@@ -446,7 +456,7 @@ export const checkLowStock = async (req, res) => {
     }
 
     // Enviar notificações WhatsApp
-    await dynamicWhatsappService.sendLowStockNotification(lowStockProducts);
+    await whatsappService.sendLowStockNotification(lowStockProducts);
 
     res.json({
       success: true,
@@ -457,7 +467,8 @@ export const checkLowStock = async (req, res) => {
     console.error('Erro ao verificar estoque baixo:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -482,7 +493,7 @@ export const sendDailyAnalysis = async (req, res) => {
     console.error('Erro ao enviar análise diária:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao enviar análise diária',
-      error: error.message 
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -513,7 +524,7 @@ export const sendSystemChangeNotification = async (req, res) => {
     console.error('Erro ao enviar notificação de alteração:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao enviar notificação de alteração',
-      error: error.message 
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -521,6 +532,7 @@ export const sendSystemChangeNotification = async (req, res) => {
 // Enviar alerta de estoque baixo
 export const sendLowStockAlert = async (req, res) => {
   try {
+    const db = getPool(req);
     // Verificar se é owner ou manager
     if (!['owner', 'manager'].includes(req.user.role)) {
       return res.status(403).json({ 
@@ -536,7 +548,7 @@ export const sendLowStockAlert = async (req, res) => {
       ORDER BY (current_stock - min_stock_level) ASC
     `;
     
-    const result = await pool.query(lowStockQuery);
+    const result = await db.query(lowStockQuery);
     const lowStockProducts = result.rows;
 
     if (lowStockProducts.length === 0) {
@@ -557,7 +569,7 @@ export const sendLowStockAlert = async (req, res) => {
     console.error('Erro ao enviar alerta de estoque:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao enviar alerta de estoque',
-      error: error.message 
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -582,7 +594,7 @@ export const sendAppointmentReminder = async (req, res) => {
     console.error('Erro ao enviar lembrete:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao enviar lembrete',
-      error: error.message 
+      ...buildErrorResponse(error),
     });
   }
 };
@@ -592,6 +604,7 @@ export const sendTestNotification = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const { message } = req.body || {};
+    const db = getPool(req);
 
     // Verificar se o usuário pode enviar notificações de teste
     if (req.user.role !== 'owner' && req.user.role !== 'manager') {
@@ -602,7 +615,7 @@ export const sendTestNotification = async (req, res) => {
     }
 
     // Buscar dados do funcionário
-    const employeeResult = await pool.query(`
+    const employeeResult = await db.query(`
       SELECT e.name, e.phone, en.enabled
       FROM employees e
       LEFT JOIN employee_notifications en ON en.employee_id = e.id
@@ -652,7 +665,8 @@ export const sendTestNotification = async (req, res) => {
       console.error('Erro ao enviar via WhatsApp:', whatsappError);
       res.status(500).json({
         success: false,
-        message: `Erro ao enviar WhatsApp: ${whatsappError.message}`,
+        message: 'Erro ao enviar WhatsApp',
+        ...buildErrorResponse(whatsappError),
         data: {
           employee_name: employee.name,
           phone: employee.phone,
@@ -664,7 +678,8 @@ export const sendTestNotification = async (req, res) => {
     console.error('Erro ao enviar notificação de teste:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erro interno do servidor' 
+      message: 'Erro interno do servidor',
+      ...buildErrorResponse(error),
     });
   }
 };

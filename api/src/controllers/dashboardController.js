@@ -1,21 +1,24 @@
+import pool from '../db/postgre.js';
+import buildErrorResponse from '../utils/errorResponse.js';
+
 class DashboardController {
   async getStats(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Estatísticas básicas
       const [clients, employees, services, appointments, products, totalRevenue, inventoryStats] = await Promise.all([
-        pool.query('SELECT COUNT(*) FROM clients'),
-        pool.query('SELECT COUNT(*) FROM employees WHERE status = \'active\''),
-        pool.query('SELECT COUNT(*) FROM services WHERE is_active = true'),
-        pool.query('SELECT COUNT(*) FROM appointments'),
-        pool.query('SELECT COUNT(*) FROM products WHERE is_active = true'),
-        pool.query(`
+        db.query('SELECT COUNT(*) FROM clients'),
+        db.query('SELECT COUNT(*) FROM employees WHERE status = \'active\''),
+        db.query('SELECT COUNT(*) FROM services WHERE is_active = true'),
+        db.query('SELECT COUNT(*) FROM appointments'),
+        db.query('SELECT COUNT(*) FROM products WHERE is_active = true'),
+        db.query(`
           SELECT 
             COALESCE(SUM(a.price), 0) as appointments_revenue,
             (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE status = 'completed') as sales_revenue
           FROM appointments a WHERE a.status = 'completed'
         `),
-        pool.query(`
+        db.query(`
           SELECT 
             COALESCE(SUM(p.current_stock * p.cost_price), 0) as inventory_value,
             COUNT(CASE WHEN p.current_stock <= p.min_stock_level THEN 1 END) as low_stock_items,
@@ -26,7 +29,7 @@ class DashboardController {
       ]);
 
       // Estatísticas do mês atual
-      const currentMonth = await pool.query(`
+      const currentMonth = await db.query(`
         SELECT 
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
           COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_appointments,
@@ -37,7 +40,7 @@ class DashboardController {
       `);
 
       // Novos clientes do mês
-      const newClients = await pool.query(`
+      const newClients = await db.query(`
         SELECT COUNT(*) as new_clients
         FROM clients 
         WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
@@ -68,14 +71,15 @@ class DashboardController {
         }
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar estatísticas', error: err.message });
+      console.error('Erro ao buscar estatísticas:', err);
+      res.status(500).json({ message: 'Erro ao buscar estatísticas', ...buildErrorResponse(err) });
     }
   }
 
   async getRecentAppointments(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
-      const { rows } = await pool.query(`
+      const { rows } = await db.query(`
         SELECT a.id, a.appointment_date, a.appointment_time, c.name as client_name, e.name as employee_name, s.name as service_name, a.status
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
@@ -86,14 +90,15 @@ class DashboardController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar agendamentos recentes', error: err.message });
+      console.error('Erro ao buscar agendamentos recentes:', err);
+      res.status(500).json({ message: 'Erro ao buscar agendamentos recentes', ...buildErrorResponse(err) });
     }
   }
 
   async getTopEmployees(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
-      const { rows } = await pool.query(`
+      const { rows } = await db.query(`
         -- Conta apenas serviços realmente concluídos para ranking
         SELECT e.id, e.name, COUNT(a.id) as total_appointments
         FROM employees e
@@ -104,14 +109,15 @@ class DashboardController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar funcionários destaque', error: err.message });
+      console.error('Erro ao buscar funcionários destaque:', err);
+      res.status(500).json({ message: 'Erro ao buscar funcionários destaque', ...buildErrorResponse(err) });
     }
   }
 
   async getRevenueSummary(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
-      const { rows } = await pool.query(`
+      const { rows } = await db.query(`
         SELECT 
           COALESCE(SUM(price),0) as total_appointments,
           (SELECT COALESCE(SUM(total_amount),0) FROM sales) as total_sales
@@ -122,15 +128,16 @@ class DashboardController {
         totalSalesRevenue: Number(rows[0].total_sales)
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar receita', error: err.message });
+      console.error('Erro ao buscar receita:', err);
+      res.status(500).json({ message: 'Erro ao buscar receita', ...buildErrorResponse(err) });
     }
   }
 
   async getExpenseBreakdown(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Despesas por categoria (últimos 30 dias)
-      const { rows: categoryBreakdown } = await pool.query(`
+      const { rows: categoryBreakdown } = await db.query(`
         SELECT 
           e.category,
           ec.name as category_name,
@@ -149,7 +156,7 @@ class DashboardController {
       `);
 
       // Despesas por método de pagamento
-      const { rows: paymentBreakdown } = await pool.query(`
+      const { rows: paymentBreakdown } = await db.query(`
         SELECT 
           payment_method,
           COUNT(*) as count,
@@ -161,13 +168,13 @@ class DashboardController {
       `);
 
       // Comparação com período anterior
-      const { rows: currentPeriod } = await pool.query(`
+      const { rows: currentPeriod } = await db.query(`
         SELECT SUM(amount) as total
         FROM expenses 
         WHERE expense_date >= CURRENT_DATE - INTERVAL '30 days'
       `);
 
-      const { rows: previousPeriod } = await pool.query(`
+      const { rows: previousPeriod } = await db.query(`
         SELECT SUM(amount) as total
         FROM expenses 
         WHERE expense_date >= CURRENT_DATE - INTERVAL '60 days'
@@ -190,16 +197,16 @@ class DashboardController {
       });
     } catch (err) {
       console.error('Erro ao buscar breakdown de despesas:', err);
-      res.status(500).json({ message: 'Erro ao buscar despesas', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar despesas', ...buildErrorResponse(err) });
     }
   }
 
   // Novas análises avançadas
   async getRevenueAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Receita por mês (últimos 12 meses)
-      const monthlyRevenue = await pool.query(`
+      const monthlyRevenue = await db.query(`
         SELECT 
           TO_CHAR(appointment_date, 'YYYY-MM') as month,
           COUNT(*) as appointments_count,
@@ -212,7 +219,7 @@ class DashboardController {
       `);
 
       // Receita por categoria de serviço
-      const revenueByCategory = await pool.query(`
+      const revenueByCategory = await db.query(`
         SELECT 
           sc.name as category,
           COUNT(a.*) as appointments_count,
@@ -227,7 +234,7 @@ class DashboardController {
       `);
 
       // Receita por funcionário
-      const revenueByEmployee = await pool.query(`
+      const revenueByEmployee = await db.query(`
         SELECT 
           e.name as employee,
           COUNT(a.*) as appointments_count,
@@ -246,15 +253,16 @@ class DashboardController {
         revenueByEmployee: revenueByEmployee.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise de receita', error: err.message });
+      console.error('Erro ao buscar análise de receita:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de receita', ...buildErrorResponse(err) });
     }
   }
 
   async getCustomerAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Clientes mais frequentes
-      const topCustomers = await pool.query(`
+      const topCustomers = await db.query(`
         SELECT 
           c.name,
           c.phone,
@@ -275,7 +283,7 @@ class DashboardController {
       `);
 
       // Segmentação de clientes por frequência
-      const customerSegments = await pool.query(`
+      const customerSegments = await db.query(`
         SELECT 
           CASE 
             WHEN total_visits >= 10 THEN 'VIP'
@@ -291,7 +299,7 @@ class DashboardController {
       `);
 
       // Novos clientes por mês
-      const newCustomersByMonth = await pool.query(`
+      const newCustomersByMonth = await db.query(`
         SELECT 
           TO_CHAR(created_at, 'YYYY-MM') as month,
           COUNT(*) as new_customers
@@ -302,7 +310,7 @@ class DashboardController {
       `);
 
       // Taxa de retenção
-      const retentionAnalysis = await pool.query(`
+      const retentionAnalysis = await db.query(`
         WITH last_visits AS (
           SELECT c.id,
                  COALESCE(c.last_visit, MAX(a.appointment_date)) AS last_visit
@@ -326,15 +334,16 @@ class DashboardController {
         retentionAnalysis: retentionAnalysis.rows[0]
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise de clientes', error: err.message });
+      console.error('Erro ao buscar análise de clientes:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de clientes', ...buildErrorResponse(err) });
     }
   }
 
   async getServiceAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Serviços mais populares
-      const popularServices = await pool.query(`
+      const popularServices = await db.query(`
         SELECT 
           s.name,
           sc.name as category,
@@ -351,7 +360,7 @@ class DashboardController {
       `);
 
       // Performance por hora do dia
-      const hourlyPerformance = await pool.query(`
+      const hourlyPerformance = await db.query(`
         SELECT 
           EXTRACT(HOUR FROM appointment_time) as hour,
           COUNT(*) as appointments_count,
@@ -363,7 +372,7 @@ class DashboardController {
       `);
 
       // Performance por dia da semana
-      const weeklyPerformance = await pool.query(`
+      const weeklyPerformance = await db.query(`
         SELECT 
           EXTRACT(DOW FROM appointment_date) as day_of_week,
           TO_CHAR(appointment_date, 'Day') as day_name,
@@ -376,7 +385,7 @@ class DashboardController {
       `);
 
       // Taxa de cancelamento por serviço
-      const cancellationRates = await pool.query(`
+      const cancellationRates = await db.query(`
         SELECT 
           s.name as service,
           COUNT(CASE WHEN a.status = 'canceled' THEN 1 END) as canceled,
@@ -399,15 +408,16 @@ class DashboardController {
         cancellationRates: cancellationRates.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise de serviços', error: err.message });
+      console.error('Erro ao buscar análise de serviços:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de serviços', ...buildErrorResponse(err) });
     }
   }
 
   async getEmployeeAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Performance detalhada dos funcionários
-      const employeePerformance = await pool.query(`
+      const employeePerformance = await db.query(`
         SELECT 
           e.name,
           COUNT(a.*) as total_appointments,
@@ -427,7 +437,7 @@ class DashboardController {
       `);
 
       // Especialidades mais rentáveis por funcionário
-      const employeeSpecialties = await pool.query(`
+      const employeeSpecialties = await db.query(`
         SELECT 
           e.name as employee,
           s.name as service,
@@ -449,15 +459,16 @@ class DashboardController {
         employeeSpecialties: employeeSpecialties.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise de funcionários', error: err.message });
+      console.error('Erro ao buscar análise de funcionários:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de funcionários', ...buildErrorResponse(err) });
     }
   }
 
   async getInventoryAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Status do estoque
-      const stockStatus = await pool.query(`
+      const stockStatus = await db.query(`
         SELECT 
           p.name,
           pc.name as category,
@@ -486,7 +497,7 @@ class DashboardController {
       `);
 
       // Movimentação de estoque
-      const stockMovements = await pool.query(`
+      const stockMovements = await db.query(`
         SELECT 
           p.name as product,
           sm.movement_type,
@@ -500,7 +511,7 @@ class DashboardController {
       `);
 
       // Produtos mais vendidos
-      const topSellingProducts = await pool.query(`
+      const topSellingProducts = await db.query(`
         SELECT 
           p.name,
           SUM(si.quantity) as total_sold,
@@ -521,15 +532,16 @@ class DashboardController {
         topSellingProducts: topSellingProducts.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise de estoque', error: err.message });
+      console.error('Erro ao buscar análise de estoque:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise de estoque', ...buildErrorResponse(err) });
     }
   }
 
   async getFinancialAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Análise financeira mensal
-      const monthlyFinancials = await pool.query(`
+      const monthlyFinancials = await db.query(`
         SELECT 
           month,
           appointments_revenue,
@@ -579,7 +591,7 @@ class DashboardController {
       `);
 
       // Métodos de pagamento (vendas + pagamentos de agendamentos)
-      const paymentMethods = await pool.query(`
+      const paymentMethods = await db.query(`
         SELECT payment_method,
                COUNT(*) as transaction_count,
                SUM(amount) as total_amount
@@ -596,7 +608,7 @@ class DashboardController {
       `);
 
       // Comissões dos funcionários (preferencialmente da tabela de pagamentos; fallback por agendamentos)
-      let commissionsAnalysis = await pool.query(`
+      let commissionsAnalysis = await db.query(`
         SELECT 
           e.name as employee,
           SUM(ec.commission_amount) as total_commissions,
@@ -610,7 +622,7 @@ class DashboardController {
       `);
 
       if (!commissionsAnalysis.rows || commissionsAnalysis.rows.length === 0) {
-        commissionsAnalysis = await pool.query(`
+        commissionsAnalysis = await db.query(`
           SELECT 
             e.name as employee,
             COALESCE(SUM(a.commission_amount), 0) as total_commissions,
@@ -632,15 +644,16 @@ class DashboardController {
         commissionsAnalysis: commissionsAnalysis.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise financeira', error: err.message });
+      console.error('Erro ao buscar análise financeira:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise financeira', ...buildErrorResponse(err) });
     }
   }
 
   async getPredictiveAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Previsão de demanda baseada em tendências históricas
-      const demandForecast = await pool.query(`
+      const demandForecast = await db.query(`
         WITH monthly_data AS (
           SELECT 
             DATE_TRUNC('month', appointment_date) as month,
@@ -666,7 +679,7 @@ class DashboardController {
       `);
 
       // Análise de sazonalidade
-      const seasonalityAnalysis = await pool.query(`
+      const seasonalityAnalysis = await db.query(`
         SELECT 
           EXTRACT(MONTH FROM appointment_date) as month,
           TO_CHAR(appointment_date, 'Month') as month_name,
@@ -687,7 +700,7 @@ class DashboardController {
       `);
 
       // Clientes em risco de abandono
-      const churnRisk = await pool.query(`
+      const churnRisk = await db.query(`
         WITH last_visits AS (
           SELECT c.id,
                  c.name,
@@ -725,16 +738,17 @@ class DashboardController {
         churnRisk: churnRisk.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar análise preditiva', error: err.message });
+      console.error('Erro ao buscar análise preditiva:', err);
+      res.status(500).json({ message: 'Erro ao buscar análise preditiva', ...buildErrorResponse(err) });
     }
   }
 
   // Nova análise específica de despesas
   async getExpenseAnalysis(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Evolução mensal das despesas (últimos 12 meses)
-      const { rows: monthlyTrend } = await pool.query(`
+      const { rows: monthlyTrend } = await db.query(`
         SELECT 
           DATE_TRUNC('month', expense_date) as month,
           COUNT(*) as count,
@@ -747,7 +761,7 @@ class DashboardController {
       `);
 
       // Top 5 maiores despesas do mês atual
-      const { rows: topExpenses } = await pool.query(`
+      const { rows: topExpenses } = await db.query(`
         SELECT 
           description,
           category,
@@ -761,7 +775,7 @@ class DashboardController {
       `);
 
       // Despesas recorrentes identificadas
-      const { rows: recurringExpenses } = await pool.query(`
+      const { rows: recurringExpenses } = await db.query(`
         SELECT 
           description,
           category,
@@ -779,7 +793,7 @@ class DashboardController {
       `);
 
       // Análise de sazonalidade (por dia da semana)
-      const { rows: weekdayAnalysis } = await pool.query(`
+      const { rows: weekdayAnalysis } = await db.query(`
         SELECT 
           EXTRACT(DOW FROM expense_date) as day_of_week,
           CASE EXTRACT(DOW FROM expense_date)
@@ -801,7 +815,7 @@ class DashboardController {
       `);
 
       // Comparação com receitas (se existir tabela de receitas/vendas)
-      const { rows: revenueComparison } = await pool.query(`
+      const { rows: revenueComparison } = await db.query(`
         WITH monthly_expenses AS (
           SELECT 
             DATE_TRUNC('month', expense_date) as month,
@@ -842,13 +856,13 @@ class DashboardController {
       });
     } catch (err) {
       console.error('Erro ao buscar análise de despesas:', err);
-      res.status(500).json({ message: 'Erro ao buscar análise de despesas', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar análise de despesas', ...buildErrorResponse(err) });
     }
   }
 
   // Endpoint para gerar relatório completo (para PDF)
   async getCompleteReport(req, res) {
-    const pool = req.pool;
+    const db = req.pool || pool;
     try {
       // Buscar todos os dados necessários para o relatório
       const [
@@ -861,14 +875,14 @@ class DashboardController {
         financialAnalysis,
         predictiveAnalysis
       ] = await Promise.all([
-        this.getStatsData(pool),
-        this.getRevenueAnalysisData(pool),
-        this.getCustomerAnalysisData(pool),
-        this.getServiceAnalysisData(pool),
-        this.getEmployeeAnalysisData(pool),
-        this.getInventoryAnalysisData(pool),
-        this.getFinancialAnalysisData(pool),
-        this.getPredictiveAnalysisData(pool)
+        this.getStatsData(db),
+        this.getRevenueAnalysisData(db),
+        this.getCustomerAnalysisData(db),
+        this.getServiceAnalysisData(db),
+        this.getEmployeeAnalysisData(db),
+        this.getInventoryAnalysisData(db),
+        this.getFinancialAnalysisData(db),
+        this.getPredictiveAnalysisData(db)
       ]);
 
       res.json({
@@ -887,7 +901,8 @@ class DashboardController {
         predictiveAnalysis
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao gerar relatório completo', error: err.message });
+      console.error('Erro ao gerar relatório completo:', err);
+      res.status(500).json({ message: 'Erro ao gerar relatório completo', ...buildErrorResponse(err) });
     }
   }
 

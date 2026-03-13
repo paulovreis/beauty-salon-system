@@ -2,6 +2,7 @@ import express from 'express';
 import authenticateJWT from '../middlewares/authenticateJWT.js';
 import roleMiddleware from '../middlewares/roleMiddleware.js';
 import InventoryController from '../controllers/inventoryController.js';
+import paginationMiddleware from '../middlewares/paginationMiddleware.js';
 import { body, param } from 'express-validator';
 import { 
   validateCreateOutput, 
@@ -17,6 +18,7 @@ router.get(
   '/',
   authenticateJWT,
   roleMiddleware(['owner', 'manager', 'employee']),
+  paginationMiddleware(),
   (req, res) => InventoryController.list(req, res)
 );
 
@@ -33,6 +35,7 @@ router.get(
   '/movements',
   authenticateJWT,
   roleMiddleware(['owner', 'manager', 'employee']),
+  paginationMiddleware(),
   (req, res) => InventoryController.listMovements(req, res)
 );
 
@@ -80,6 +83,7 @@ router.get(
   '/outputs',
   authenticateJWT,
   roleMiddleware(['owner', 'manager', 'employee']),
+  paginationMiddleware(),
   (req, res) => InventoryController.listOutputs(req, res)
 );
 

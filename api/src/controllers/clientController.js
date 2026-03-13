@@ -1,5 +1,6 @@
 import pool from "../db/postgre.js";
 import whatsappService from "../services/whatsappNotificationService.js";
+import buildErrorResponse from '../utils/errorResponse.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
@@ -8,8 +9,14 @@ class ClientController {
   async list(req, res) {
     const db = getPool(req);
     try {
-      const { q, page = 1, limit = 50 } = req.query;
-      const offset = (page - 1) * limit;
+      const { q } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let query = `
         SELECT 
@@ -50,14 +57,15 @@ class ClientController {
       res.json({
         clients: clientsResult.rows,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page,
+          limit,
           total: parseInt(countResult.rows[0].count),
           totalPages: Math.ceil(countResult.rows[0].count / limit)
         }
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao listar clientes', error: err.message });
+      console.error('Erro ao listar clientes:', err);
+      res.status(500).json({ message: 'Erro ao listar clientes', ...buildErrorResponse(err) });
     }
   }
 
@@ -104,7 +112,8 @@ class ClientController {
         recent_appointments: appointmentsResult.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar cliente', error: err.message });
+      console.error('Erro ao buscar cliente:', err);
+      res.status(500).json({ message: 'Erro ao buscar cliente', ...buildErrorResponse(err) });
     }
   }
 
@@ -161,7 +170,6 @@ class ClientController {
           const welcomeMessage = `🎉 *Bem-vindo(a), ${name}!*\n\nOlá! É um prazer ter você como nosso cliente!\n\nEstamos aqui para cuidar da sua beleza com todo carinho e profissionalismo.\n\n✨ *Nossos serviços incluem:*\n• Cortes e penteados\n• Coloração e mechas\n• Tratamentos capilares\n• Manicure e pedicure\n• E muito mais!\n\n📅 Para agendamentos, entre em contato conosco!\n\n💖 Obrigada por escolher nosso salão!`;
           
           await whatsappService.sendMessage(phone, welcomeMessage);
-          console.log(`Mensagem de boas-vindas enviada para ${name} (${phone})`);
         } catch (whatsappError) {
           console.error('Erro ao enviar mensagem de boas-vindas:', whatsappError);
           // Não falha a criação do cliente se a mensagem falhar
@@ -186,7 +194,8 @@ class ClientController {
       
       res.status(201).json(newClient);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao criar cliente', error: err.message });
+      console.error('Erro ao criar cliente:', err);
+      res.status(500).json({ message: 'Erro ao criar cliente', ...buildErrorResponse(err) });
     }
   }
 
@@ -264,7 +273,8 @@ class ClientController {
       
       res.json(rows[0]);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao atualizar cliente', error: err.message });
+      console.error('Erro ao atualizar cliente:', err);
+      res.status(500).json({ message: 'Erro ao atualizar cliente', ...buildErrorResponse(err) });
     }
   }
 
@@ -293,7 +303,8 @@ class ClientController {
       
       res.json({ message: `Cliente ${result.rows[0].name} excluído com sucesso` });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao excluir cliente', error: err.message });
+      console.error('Erro ao excluir cliente:', err);
+      res.status(500).json({ message: 'Erro ao excluir cliente', ...buildErrorResponse(err) });
     }
   }
 
@@ -339,7 +350,8 @@ class ClientController {
         upcoming_birthdays: birthdays.rows
       });
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar estatísticas', error: err.message });
+      console.error('Erro ao buscar estatísticas:', err);
+      res.status(500).json({ message: 'Erro ao buscar estatísticas', ...buildErrorResponse(err) });
     }
   }
 }

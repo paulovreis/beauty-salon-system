@@ -1,6 +1,7 @@
 import pool from '../db/postgre.js';
 
 import whatsappService from '../services/whatsappNotificationService.js';
+import buildErrorResponse from '../utils/errorResponse.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
@@ -9,8 +10,14 @@ class ExpenseController {
   // GET /expenses - Listar todas as despesas
   async list(req, res) {
     const db = getPool(req);
-    const { page = 1, limit = 50, category, start_date, end_date, search } = req.query;
-    const offset = (page - 1) * limit;
+    const { category, start_date, end_date, search } = req.query;
+    const pagination = req.pagination || {
+      page: Number.parseInt(req.query.page, 10) || 1,
+      limit: Number.parseInt(req.query.limit, 10) || 50,
+    };
+    const page = pagination.page;
+    const limit = pagination.limit;
+    const offset = pagination.offset ?? (page - 1) * limit;
 
     try {
       let whereConditions = [];
@@ -62,17 +69,17 @@ class ExpenseController {
       res.json({
         expenses: rows,
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalPages,
           totalItems: total,
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           hasNextPage: page < totalPages,
           hasPreviousPage: page > 1
         }
       });
     } catch (err) {
       console.error('Erro ao buscar despesas:', err);
-      res.status(500).json({ message: 'Erro ao buscar despesas', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar despesas', ...buildErrorResponse(err) });
     }
   }
 
@@ -91,7 +98,7 @@ class ExpenseController {
       res.json(rows[0]);
     } catch (err) {
       console.error('Erro ao buscar despesa:', err);
-      res.status(500).json({ message: 'Erro ao buscar despesa', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar despesa', ...buildErrorResponse(err) });
     }
   }
 
@@ -139,7 +146,7 @@ class ExpenseController {
       res.status(201).json(rows[0]);
     } catch (err) {
       console.error('Erro ao criar despesa:', err);
-      res.status(500).json({ message: 'Erro ao criar despesa', error: err.message });
+      res.status(500).json({ message: 'Erro ao criar despesa', ...buildErrorResponse(err) });
     }
   }
 
@@ -184,7 +191,7 @@ class ExpenseController {
       res.json(rows[0]);
     } catch (err) {
       console.error('Erro ao atualizar despesa:', err);
-      res.status(500).json({ message: 'Erro ao atualizar despesa', error: err.message });
+      res.status(500).json({ message: 'Erro ao atualizar despesa', ...buildErrorResponse(err) });
     }
   }
 
@@ -203,7 +210,7 @@ class ExpenseController {
       res.json({ message: 'Despesa removida com sucesso' });
     } catch (err) {
       console.error('Erro ao remover despesa:', err);
-      res.status(500).json({ message: 'Erro ao remover despesa', error: err.message });
+      res.status(500).json({ message: 'Erro ao remover despesa', ...buildErrorResponse(err) });
     }
   }
 
@@ -278,7 +285,7 @@ class ExpenseController {
       });
     } catch (err) {
       console.error('Erro ao buscar resumo de despesas:', err);
-      res.status(500).json({ message: 'Erro ao buscar resumo de despesas', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar resumo de despesas', ...buildErrorResponse(err) });
     }
   }
 
@@ -297,7 +304,7 @@ class ExpenseController {
       res.json(rows);
     } catch (err) {
       console.error('Erro ao buscar categorias:', err);
-      res.status(500).json({ message: 'Erro ao buscar categorias', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar categorias', ...buildErrorResponse(err) });
     }
   }
 
@@ -316,7 +323,7 @@ class ExpenseController {
       res.json(rows);
     } catch (err) {
       console.error('Erro ao buscar despesas recentes:', err);
-      res.status(500).json({ message: 'Erro ao buscar despesas recentes', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar despesas recentes', ...buildErrorResponse(err) });
     }
   }
 
@@ -394,7 +401,7 @@ class ExpenseController {
       });
     } catch (err) {
       console.error('Erro ao buscar analytics de despesas:', err);
-      res.status(500).json({ message: 'Erro ao buscar analytics de despesas', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar analytics de despesas', ...buildErrorResponse(err) });
     }
   }
 }

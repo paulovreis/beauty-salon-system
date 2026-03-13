@@ -3,6 +3,7 @@ import authenticateJWT from "../middlewares/authenticateJWT.js";
 import roleMiddleware from "../middlewares/roleMiddleware.js";
 import ProductController from "../controllers/productController.js";
 import ProductCategoryController from "../controllers/productCategoryController.js";
+import paginationMiddleware from "../middlewares/paginationMiddleware.js";
 import {
   validateProductCreate,
   validateProductUpdate,
@@ -61,6 +62,7 @@ router.get(
   "/",
   authenticateJWT,
   roleMiddleware(["owner", "manager", "employee"]),
+  paginationMiddleware(),
   (req, res) => productController.getAllProducts(req, res)
 );
 

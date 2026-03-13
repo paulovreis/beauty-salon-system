@@ -97,7 +97,7 @@ describe('Auth flows: register, login, refresh, password reset', () => {
       });
       fail('Should have thrown error');
     } catch (err) {
-      expect(err.response.status).toBe(403);
+      expect(err.response.status).toBe(401);
     }
   });
 
