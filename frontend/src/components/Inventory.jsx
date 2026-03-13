@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -214,8 +214,6 @@ export default function Inventory() {
         payload.description = newItem.description.trim();
       }
       
-      console.log("Payload enviado:", payload);
-      
       const res = await axiosWithAuth("/products", {
         method: "post",
         data: payload,
@@ -418,8 +416,31 @@ export default function Inventory() {
     }
   }
 
-  const lowStockItems = inventory.filter((item) => item.status === "low_stock" || item.status === "out_of_stock")
-  const slowMovingItems = inventory.filter((item) => item.status === 'slow_moving')
+  const lowStockItems = useMemo(
+    () => inventory.filter((item) => item.status === "low_stock" || item.status === "out_of_stock"),
+    [inventory]
+  )
+
+  const slowMovingItems = useMemo(
+    () => inventory.filter((item) => item.status === 'slow_moving'),
+    [inventory]
+  )
+
+  const categoryCount = useMemo(
+    () => new Set(inventory.map((item) => item.category)).size,
+    [inventory]
+  )
+
+  const inventoryValue = useMemo(
+    () =>
+      inventory.reduce((sum, item) => {
+        const cost = Number(item.cost)
+        const qty = Number(item.currentStock)
+        if (Number.isNaN(cost) || Number.isNaN(qty)) return sum
+        return sum + qty * cost
+      }, 0),
+    [inventory]
+  )
 
   const maskLastRestocked = (dateStr) => {
     if (!dateStr) return "Nunca"
@@ -592,7 +613,7 @@ export default function Inventory() {
           <CardContent>
             <div className="text-2xl font-bold">{inventory.length}</div>
             <p className="text-xs text-muted-foreground">
-              Em {new Set(inventory.map((item) => item.category)).size} categorias
+              Em {categoryCount} categorias
             </p>
           </CardContent>
         </Card>
@@ -627,13 +648,7 @@ export default function Inventory() {
           <CardContent>
             <div className="text-2xl font-bold">
               R$
-              {inventory
-                .reduce((sum, item) => {
-                  const cost = Number(item.cost);
-                  const qty = Number(item.currentStock);
-                  if (isNaN(cost) || isNaN(qty)) return sum;
-                  return sum + qty * cost;
-                }, 0)
+              {inventoryValue
                 .toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">Valor total de custo</p>

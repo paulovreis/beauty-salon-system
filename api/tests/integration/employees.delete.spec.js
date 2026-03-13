@@ -20,7 +20,7 @@ describe('Employees deletion behavior', () => {
 
     const { rows: empRows } = await pool.query(
       `INSERT INTO employees (user_id, name, email, phone, status) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [ids.userId, 'Funcionario Teste', 'emp@test.com', '77981365540', 'active']
+      [ids.userId, 'Funcionario Teste', 'emp@test.com', '11111111111', 'active']
     );
     ids.employeeId = empRows[0].id;
 
@@ -44,7 +44,7 @@ describe('Employees deletion behavior', () => {
 
     const { rows: clientRows } = await pool.query(
       `INSERT INTO clients (name, phone) VALUES ($1,$2) RETURNING id`,
-      ['Cliente Teste', '11888887777']
+      ['Cliente Teste', '11111111111']
     );
     ids.clientId = clientRows[0].id;
 
@@ -59,6 +59,7 @@ describe('Employees deletion behavior', () => {
     try {
       // Cleanup hard deletes (appointments and employee) if left over
       await pool.query('DELETE FROM appointments WHERE employee_id = $1', [ids.employeeId]);
+      await pool.query('DELETE FROM clients WHERE id = $1', [ids.clientId]);
       await pool.query('DELETE FROM employees WHERE id = $1', [ids.employeeId]);
       await pool.query('DELETE FROM users WHERE id = $1', [ids.userId]);
     } catch {}

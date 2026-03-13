@@ -138,12 +138,7 @@ export default function WhatsApp() {
     setLoading(true);
     clearAlert();
     try {
-      console.log('Tentando conectar com Evolution API...');
-      console.log('URL:', EVOLUTION_API_URL);
-      console.log('API Key:', EVOLUTION_API_KEY);
-      
       const response = await evolutionApi.getInstances();
-      console.log('Resposta da API:', response);
       // Normaliza resposta para evitar instanceName undefined
       const rawList = Array.isArray(response)
         ? response

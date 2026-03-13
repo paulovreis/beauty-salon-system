@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { axiosWithAuth } from './api/axiosWithAuth';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -30,8 +30,11 @@ export default function Clients() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
+
+  const clientsRequestIdRef = useRef(0);
   
   // Estados do modal
   const [showModal, setShowModal] = useState(false);
@@ -54,24 +57,39 @@ export default function Clients() {
   const [clientToDelete, setClientToDelete] = useState(null);
 
   useEffect(() => {
-    loadClients();
-    loadStats();
-  }, [page, searchQuery]);
+    const handle = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
-  const loadClients = async () => {
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery !== debouncedSearchQuery) return;
+    loadClients(page, debouncedSearchQuery);
+  }, [page, debouncedSearchQuery, searchQuery]);
+
+  const loadClients = async (nextPage = page, query = debouncedSearchQuery) => {
+    const requestId = ++clientsRequestIdRef.current;
     setLoading(true);
-    clearAlert();
+    if (alert?.type === 'destructive') clearAlert();
     try {
       const params = new URLSearchParams({
-        page: page.toString(),
+        page: nextPage.toString(),
         limit: '20'
       });
       
-      if (searchQuery.trim()) {
-        params.append('q', searchQuery.trim());
+      const trimmedQuery = query.trim();
+      if (trimmedQuery) {
+        params.append('q', trimmedQuery);
       }
       
       const response = await axiosWithAuth(`/clients?${params}`);
+
+      if (requestId !== clientsRequestIdRef.current) return;
       
       if (Array.isArray(response.data)) {
         // Resposta de busca rápida
@@ -83,9 +101,12 @@ export default function Clients() {
         setPagination(response.data.pagination);
       }
     } catch (err) {
+      if (requestId !== clientsRequestIdRef.current) return;
       showError(err);
     } finally {
-      setLoading(false);
+      if (requestId === clientsRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -94,12 +115,13 @@ export default function Clients() {
       const response = await axiosWithAuth('/clients/stats');
       setStats(response.data);
     } catch (err) {
-      console.error('Erro ao carregar estatísticas:', err);
+      showError(err);
     }
   };
 
   const handleSearch = (e) => {
     const value = e.target.value;
+    if (alert?.type === 'destructive') clearAlert();
     setSearchQuery(value);
     setPage(1); // Reset para primeira página ao buscar
   };
@@ -197,12 +219,16 @@ export default function Clients() {
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
-  const formatCurrency = (value) => {
+  const currencyFormatter = useMemo(() => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(value || 0);
-  };
+    });
+  }, []);
+
+  const formatCurrency = useCallback((value) => {
+    return currencyFormatter.format(value || 0);
+  }, [currencyFormatter]);
 
   const getStatusBadge = (client) => {
     const daysSinceLastVisit = client.last_visit ? 

@@ -119,9 +119,7 @@ export default function Scheduling() {
       try {
         setLoading(true)
         const d = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
-        console.log('Carregando agendamentos para data:', d)
         const data = await SchedulingApi.getByDate(d)
-        console.log('Dados recebidos da API:', data)
         const mapped = (data || []).map((a) => ({
           id: a.id,
           clientName: a.client_name,
@@ -137,7 +135,6 @@ export default function Scheduling() {
           notes: a.notes || '',
           commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
         }))
-        console.log('Agendamentos mapeados:', mapped)
         setAppointments(mapped)
       } catch (e) {
         console.error('Falha ao carregar agendamentos:', e)
@@ -166,7 +163,7 @@ export default function Scheduling() {
         setAvailableSlots([])
       }
     })()
-  }, [newAppointment.employeeId, newAppointment.date, newAppointment.serviceId, appointments])
+  }, [newAppointment.employeeId, newAppointment.date, newAppointment.serviceId])
 
   // Load next five upcoming
   useEffect(() => {
@@ -584,6 +581,11 @@ export default function Scheduling() {
   const todayAppointments = appointments // já estão filtrados por data selecionada
   const upcomingAppointments = upcoming.length ? upcoming : nextFive
 
+  const sortedTodayAppointments = useMemo(
+    () => [...todayAppointments].sort((a, b) => a.time.localeCompare(b.time)),
+    [todayAppointments]
+  )
+
   return (
     <div className="space-y-6">
       <AlertDisplay alert={alert} onClose={clearAlert} />
@@ -777,9 +779,7 @@ export default function Scheduling() {
               <p className="text-center text-muted-foreground py-8">Nenhum agendamento para esta data</p>
             ) : (
               <div className="space-y-4">
-                {todayAppointments
-                  .sort((a, b) => a.time.localeCompare(b.time))
-                  .map((appointment) => (
+                {sortedTodayAppointments.map((appointment) => (
                     <div key={appointment.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className="text-center">

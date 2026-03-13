@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -17,6 +17,20 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+
+const WEEKDAY_TRANSLATION = {
+  Sunday: 'Domingo',
+  Monday: 'Segunda-feira',
+  Tuesday: 'Terça-feira',
+  Wednesday: 'Quarta-feira',
+  Thursday: 'Quinta-feira',
+  Friday: 'Sexta-feira',
+  Saturday: 'Sábado',
+};
+
+const DAY_ORDER_PT = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+
+const translateWeekday = (day) => WEEKDAY_TRANSLATION[day] || day;
 
 // Componente de métricas principais
 const MetricCard = ({ title, value, change, changeType, icon: Icon, color = "blue" }) => {
@@ -173,19 +187,6 @@ export default function Analytics() {
     }
   };
 
-  const translateWeekday = (day) => {
-    const mapping = {
-      'Sunday': 'Domingo',
-      'Monday': 'Segunda-feira',
-      'Tuesday': 'Terça-feira',
-      'Wednesday': 'Quarta-feira',
-      'Thursday': 'Quinta-feira',
-      'Friday': 'Sexta-feira',
-      'Saturday': 'Sábado'
-    };
-    return mapping[day] || day;
-  }
-
   useEffect(() => {
     fetchAnalyticsData();
   }, []);
@@ -236,6 +237,85 @@ export default function Analytics() {
     }
   };
 
+  const {
+    monthlyRevenueData,
+    categoryRevenueData,
+    employeeRevenueData,
+    customerSegmentData,
+    weeklyPerformanceData,
+    hourlyPerformanceData,
+    monthlyFinancialData,
+  } = useMemo(() => {
+    if (!data) {
+      return {
+        monthlyRevenueData: [],
+        categoryRevenueData: [],
+        employeeRevenueData: [],
+        customerSegmentData: [],
+        weeklyPerformanceData: [],
+        hourlyPerformanceData: [],
+        monthlyFinancialData: [],
+      };
+    }
+
+    const monthlyRevenueData = (data.revenue?.monthlyRevenue || []).map((item) => ({
+      month: item.month,
+      revenue: Number(item.revenue || 0),
+      appointments: Number(item.appointments_count || 0),
+    }));
+
+    const categoryRevenueData = (data.revenue?.revenueByCategory || []).map((item) => ({
+      category: item.category || 'Sem categoria',
+      revenue: Number(item.revenue || 0),
+      appointments: Number(item.appointments_count || 0),
+    }));
+
+    const employeeRevenueData = (data.revenue?.revenueByEmployee || [])
+      .map((item) => ({
+        employee: item.employee,
+        revenue: Number(item.revenue || 0),
+        appointments: Number(item.appointments_count || 0),
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const customerSegmentData = (data.customers?.customerSegments || []).map((item) => ({
+      name: item.segment,
+      value: Number(item.count || 0),
+      avgSpent: Number(item.avg_spent || 0),
+    }));
+
+    const weeklyPerformanceData = (data.services?.weeklyPerformance || [])
+      .map((item) => ({
+        day: translateWeekday(item.day_name?.trim()),
+        appointments: Number(item.appointments_count || 0),
+        revenue: Number(item.revenue || 0),
+      }))
+      .sort((a, b) => DAY_ORDER_PT.indexOf(a.day) - DAY_ORDER_PT.indexOf(b.day));
+
+    const hourlyPerformanceData = (data.services?.hourlyPerformance || []).map((item) => ({
+      hour: `${item.hour}:00`,
+      appointments: Number(item.appointments_count || 0),
+      revenue: Number(item.revenue || 0),
+    }));
+
+    const monthlyFinancialData = (data.financial?.monthlyFinancials || []).map((item) => ({
+      month: item.month,
+      revenue: Number(item.total_revenue || 0),
+      expenses: Number(item.total_expenses || 0),
+      profit: Number(item.net_profit || 0),
+    }));
+
+    return {
+      monthlyRevenueData,
+      categoryRevenueData,
+      employeeRevenueData,
+      customerSegmentData,
+      weeklyPerformanceData,
+      hourlyPerformanceData,
+      monthlyFinancialData,
+    };
+  }, [data]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -255,53 +335,6 @@ export default function Analytics() {
   }
 
   if (!data) return null;
-
-  // Preparar dados para os gráficos
-  const monthlyRevenueData = (data.revenue?.monthlyRevenue || []).map(item => ({
-    month: item.month,
-    revenue: Number(item.revenue || 0),
-    appointments: Number(item.appointments_count || 0)
-  }));
-
-  const categoryRevenueData = (data.revenue?.revenueByCategory || []).map(item => ({
-    category: item.category || 'Sem categoria',
-    revenue: Number(item.revenue || 0),
-    appointments: Number(item.appointments_count || 0)
-  }));
-
-  const employeeRevenueData = (data.revenue?.revenueByEmployee || [])
-    .map(item => ({
-    employee: item.employee,
-    revenue: Number(item.revenue || 0),
-    appointments: Number(item.appointments_count || 0)
-  }))
-    .sort((a,b) => b.revenue - a.revenue);
-
-  const customerSegmentData = (data.customers?.customerSegments || []).map(item => ({
-    name: item.segment,
-    value: Number(item.count || 0),
-    avgSpent: Number(item.avg_spent || 0)
-  }));
-
-  const dayOrder = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
-  const weeklyPerformanceData = (data.services?.weeklyPerformance || []).map(item => ({
-    day: translateWeekday(item.day_name?.trim()),
-    appointments: Number(item.appointments_count || 0),
-    revenue: Number(item.revenue || 0)
-  })).sort((a,b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-
-  const hourlyPerformanceData = (data.services?.hourlyPerformance || []).map(item => ({
-    hour: `${item.hour}:00`,
-    appointments: Number(item.appointments_count || 0),
-    revenue: Number(item.revenue || 0)
-  }));
-
-  const monthlyFinancialData = (data.financial?.monthlyFinancials || []).map(item => ({
-    month: item.month,
-    revenue: Number(item.total_revenue || 0),
-    expenses: Number(item.total_expenses || 0),
-    profit: Number(item.net_profit || 0)
-  }));
 
   // Tradução visual de métodos de pagamento
   const paymentLabel = (code) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
@@ -78,16 +78,27 @@ export default function Dashboard() {
   if (loading) return <div className="p-4 md:p-8 text-center">Carregando dashboard...</div>
   if (error) return <div className="p-4 md:p-8 text-center text-red-600">{error}</div>
 
+  const expenseTotal = useMemo(() => {
+    if (!Array.isArray(expenses) || expenses.length === 0) return 0
+    return expenses.reduce((acc, e) => acc + Number(e.total || 0), 0)
+  }, [expenses])
+
   // Exemplo de cálculo de valores para exibir
-  const monthlyStats = stats ? {
-    revenue: (revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0),
-    profit: ((revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0)) - (Array.isArray(expenses) ? expenses.reduce((acc, e) => acc + Number(e.total || 0), 0) : 0),
-    profitMargin: revenue && Array.isArray(expenses) && expenses.length ? Math.round(100 * (((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) - expenses.reduce((acc, e) => acc + Number(e.total || 0), 0)) / ((revenue.totalAppointmentsRevenue || 0) + (revenue.totalSalesRevenue || 0) || 1))) : 0,
-    servicesCompleted: stats.monthlyStats?.completedAppointments || 0,
-    newClients: stats.monthlyStats?.newClients || 0,
-    inventoryValue: stats.inventoryStats?.inventoryValue || 0,
-    lowStockItems: stats.inventoryStats?.lowStockItems || 0
-  } : {}
+  const monthlyStats = useMemo(() => {
+    if (!stats) return {}
+    const totalRevenue = (revenue?.totalAppointmentsRevenue || 0) + (revenue?.totalSalesRevenue || 0)
+    const profit = totalRevenue - expenseTotal
+    const profitMargin = totalRevenue ? Math.round(100 * (profit / totalRevenue)) : 0
+    return {
+      revenue: totalRevenue,
+      profit,
+      profitMargin,
+      servicesCompleted: stats.monthlyStats?.completedAppointments || 0,
+      newClients: stats.monthlyStats?.newClients || 0,
+      inventoryValue: stats.inventoryStats?.inventoryValue || 0,
+      lowStockItems: stats.inventoryStats?.lowStockItems || 0,
+    }
+  }, [stats, revenue, expenseTotal])
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -209,8 +220,8 @@ export default function Dashboard() {
             {!Array.isArray(expenses) || expenses.length === 0 ? (
               <div className="text-center text-muted-foreground col-span-3">Nenhuma despesa encontrada.</div>
             ) : (
-              expenses.map((item) => (
-                  <div key={item.category || Math.random()} className="space-y-2 p-2 rounded bg-gray-50">
+              expenses.map((item, index) => (
+                  <div key={`${item.category_name || item.category || 'expense'}-${index}`} className="space-y-2 p-2 rounded bg-gray-50">
                   <div className="flex justify-between">
                     <span className="text-sm">{item.category_name || item.category || 'Categoria não informada'}</span>
                     <span className="text-sm font-medium">R${Number(item.total || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>

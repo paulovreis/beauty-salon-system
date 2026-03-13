@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from './ui/dialog';
-import { Alert, AlertDescription } from './ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Progress } from './ui/progress';
 import { axiosWithAuth } from './api/axiosWithAuth';
 import { useAlert } from '../hooks/useAlert';
@@ -55,6 +53,20 @@ export default function Expenses() {
     search: ''
   });
 
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const expensesRequestIdRef = useRef(0);
+
+  const categoryColorByValue = useMemo(() => {
+    return new Map(CATEGORIES.map((c) => [c.value, c.color]));
+  }, []);
+
+  const currencyFormatter = useMemo(() => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    });
+  }, []);
+
   // Estados para formulário de nova despesa
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -71,22 +83,33 @@ export default function Expenses() {
 
   // Carregar despesas
   const fetchExpenses = async () => {
+    const requestId = ++expensesRequestIdRef.current;
     setLoading(true);
     try {
+      const { search: _search, ...restFilters } = filters;
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: '20',
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v))
+        ...Object.fromEntries(Object.entries(restFilters).filter(([_, v]) => v))
       });
+
+      const trimmedSearch = debouncedSearch.trim();
+      if (trimmedSearch) {
+        params.append('search', trimmedSearch);
+      }
       
       const response = await axiosWithAuth(`/expenses?${params}`);
+
+      if (requestId !== expensesRequestIdRef.current) return;
       setExpenses(response.data.expenses);
       setTotalPages(response.data.pagination.totalPages);
     } catch (err) {
-      showError('Erro ao carregar despesas');
-      console.error('Erro ao buscar despesas:', err);
+      if (requestId !== expensesRequestIdRef.current) return;
+      showError(err);
     } finally {
-      setLoading(false);
+      if (requestId === expensesRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -96,7 +119,7 @@ export default function Expenses() {
       const response = await axiosWithAuth('/expenses/summary');
       setSummary(response.data);
     } catch (err) {
-      console.error('Erro ao buscar resumo:', err);
+      showError(err);
     }
   };
 
@@ -106,14 +129,22 @@ export default function Expenses() {
       const response = await axiosWithAuth('/expenses/analytics');
       setAnalytics(response.data);
     } catch (err) {
-      console.error('Erro ao buscar analytics:', err);
+      showError(err);
     }
   };
 
   // Efeitos
   useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(filters.search);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [filters.search]);
+
+  useEffect(() => {
+    if (filters.search !== debouncedSearch) return;
     fetchExpenses();
-  }, [currentPage, filters]);
+  }, [currentPage, filters.category, filters.start_date, filters.end_date, debouncedSearch, filters.search]);
 
   useEffect(() => {
     if (activeTab === 'analytics') {
@@ -151,8 +182,7 @@ export default function Expenses() {
         fetchAnalytics();
       }
     } catch (err) {
-      showError('Erro ao adicionar despesa');
-      console.error('Erro ao criar despesa:', err);
+      showError(err);
     }
   };
 
@@ -179,8 +209,7 @@ export default function Expenses() {
       showSuccess('Despesa atualizada com sucesso!');
       fetchExpenses();
     } catch (err) {
-      showError('Erro ao atualizar despesa');
-      console.error('Erro ao atualizar despesa:', err);
+      showError(err);
     }
   };
 
@@ -191,24 +220,18 @@ export default function Expenses() {
         showSuccess('Despesa excluída com sucesso!');
         fetchExpenses();
       } catch (err) {
-        showError('Erro ao excluir despesa');
-        console.error('Erro ao excluir despesa:', err);
+        showError(err);
       }
     }
   };
 
-  const getCategoryColor = (category) => {
-    const cat = CATEGORIES.find(c => c.value === category);
-    return cat ? cat.color : 'bg-gray-500';
-  };
+  const getCategoryColor = useCallback((category) => {
+    return categoryColorByValue.get(category) ?? 'bg-gray-500';
+  }, [categoryColorByValue]);
 
-  const formatCurrency = (value) => {
-    const n = Number(value || 0);
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(n);
-  };
+  const formatCurrency = useCallback((value) => {
+    return currencyFormatter.format(Number(value || 0));
+  }, [currencyFormatter]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -243,7 +266,10 @@ export default function Expenses() {
                   <select
                     className="w-full p-2 border rounded"
                     value={filters.category}
-                    onChange={(e) => setFilters({...filters, category: e.target.value})}
+                    onChange={(e) => {
+                      setFilters({ ...filters, category: e.target.value });
+                      setCurrentPage(1);
+                    }}
                   >
                     <option value="">Todas as categorias</option>
                     {CATEGORIES.map(cat => (
@@ -256,7 +282,10 @@ export default function Expenses() {
                   <Input
                     type="date"
                     value={filters.start_date}
-                    onChange={(e) => setFilters({...filters, start_date: e.target.value})}
+                    onChange={(e) => {
+                      setFilters({ ...filters, start_date: e.target.value });
+                      setCurrentPage(1);
+                    }}
                   />
                 </div>
                 <div>
@@ -264,7 +293,10 @@ export default function Expenses() {
                   <Input
                     type="date"
                     value={filters.end_date}
-                    onChange={(e) => setFilters({...filters, end_date: e.target.value})}
+                    onChange={(e) => {
+                      setFilters({ ...filters, end_date: e.target.value });
+                      setCurrentPage(1);
+                    }}
                   />
                 </div>
                 <div>
@@ -272,7 +304,10 @@ export default function Expenses() {
                   <Input
                     placeholder="Descrição ou número do recibo"
                     value={filters.search}
-                    onChange={(e) => setFilters({...filters, search: e.target.value})}
+                    onChange={(e) => {
+                      setFilters({ ...filters, search: e.target.value });
+                      setCurrentPage(1);
+                    }}
                   />
                 </div>
               </div>
