@@ -3,6 +3,30 @@ import pool from "../db/postgre.js";
 import withTransaction from "../db/withTransaction.js";
 import whatsappService from "../services/whatsappNotificationService.js";
 import buildErrorResponse from "../utils/errorResponse.js";
+import { decryptString, encryptString, hmacSha256Hex, normalizePhoneBR, normalizeText } from '../utils/fieldCrypto.js';
+
+function decryptPhones(rows) {
+	if (!rows) return rows;
+	const arr = Array.isArray(rows) ? rows : [rows];
+	const mapped = arr.map((r) => {
+		if (!r || typeof r !== 'object') return r;
+		const out = { ...r };
+		if ('notes_enc' in out) {
+			out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
+			delete out.notes_enc;
+		}
+		if ('client_phone_enc' in out) {
+			out.client_phone = out.client_phone_enc ? decryptString(out.client_phone_enc) : out.client_phone;
+			delete out.client_phone_enc;
+		}
+		if ('employee_phone_enc' in out) {
+			out.employee_phone = out.employee_phone_enc ? decryptString(out.employee_phone_enc) : out.employee_phone;
+			delete out.employee_phone_enc;
+		}
+		return out;
+	});
+	return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class SchedulingController {
 	constructor() {}
@@ -124,8 +148,9 @@ class SchedulingController {
 					a.duration_minutes,
 					a.price,
 					a.notes,
+					a.notes_enc,
 					c.name as client_name,
-					c.phone as client_phone,
+					c.phone_enc as client_phone_enc,
 					e.name as employee_name,
 					s.name as service_name,
 					CASE 
@@ -153,7 +178,7 @@ class SchedulingController {
 			`, queryParams);
 
 			res.json({
-				appointments: rows,
+				appointments: decryptPhones(rows),
 				pagination: {
 					currentPage: page,
 					totalItems: parseInt(countRows[0].total),
@@ -184,8 +209,9 @@ class SchedulingController {
 					   a.duration_minutes,
 					   a.price,
 					   a.notes,
+					   a.notes_enc,
 					   c.name as client_name,
-					   c.phone as client_phone,
+					   c.phone_enc as client_phone_enc,
 					   e.name as employee_name,
 					   s.name as service_name
                 FROM appointments a
@@ -199,7 +225,7 @@ class SchedulingController {
 			if (rows.length === 0) {
 				return res.status(404).json({ message: "Agendamento não encontrado" });
 			}
-			res.json(rows[0]);
+			res.json(decryptPhones(rows[0]));
 		} catch (err) {
 			console.error('Erro ao buscar agendamento:', err);
 			res.status(500).json({ message: "Erro ao buscar agendamento", ...buildErrorResponse(err) });
@@ -223,7 +249,7 @@ class SchedulingController {
 					   a.service_id,
 					   a.commission_amount,
                        c.name as client_name,
-                       c.phone as client_phone,
+					  c.phone_enc as client_phone_enc,
                        e.name as employee_name,
                        s.name as service_name
                 FROM appointments a
@@ -234,7 +260,7 @@ class SchedulingController {
             `,
 				[date]
 			);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
 			console.error('Erro ao buscar agendamentos por data:', err);
 			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
@@ -255,7 +281,7 @@ class SchedulingController {
 				       a.duration_minutes,
 				       a.price,
 				       c.name as client_name,
-				       c.phone as client_phone,
+				       c.phone_enc as client_phone_enc,
 				       e.name as employee_name,
 				       s.name as service_name
 				FROM appointments a
@@ -267,7 +293,7 @@ class SchedulingController {
 				ORDER BY a.appointment_date ASC, a.appointment_time ASC
 				LIMIT 5;
 			`);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
 			console.error('Erro ao buscar próximos agendamentos:', err);
 			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
@@ -289,7 +315,7 @@ class SchedulingController {
 			   OR (a.appointment_date = CURRENT_DATE AND a.appointment_time > CURRENT_TIME)`;
 			const dataPromise = db.query(`
 				SELECT a.id, a.appointment_date, a.appointment_time, a.status, a.duration_minutes, a.price,
-				       c.name as client_name, c.phone as client_phone, e.name as employee_name, s.name as service_name
+				       c.name as client_name, c.phone_enc as client_phone_enc, e.name as employee_name, s.name as service_name
 				FROM appointments a
 				JOIN clients c ON a.client_id = c.id
 				JOIN employees e ON a.employee_id = e.id
@@ -302,7 +328,7 @@ class SchedulingController {
 			const [{rows}, countResult] = await Promise.all([dataPromise, countPromise]);
 			const total = parseInt(countResult.rows[0].count,10) || 0;
 			const hasMore = offset + rows.length < total;
-			res.json({data: rows, limit, offset, total, hasMore: offset + rows.length < total});
+			res.json({data: decryptPhones(rows), limit, offset, total, hasMore: offset + rows.length < total});
 		}catch(err){
 			console.error('Erro ao buscar agendamentos futuros:', err);
 			res.status(500).json({message:'Erro ao buscar agendamentos futuros', ...buildErrorResponse(err)});
@@ -323,7 +349,7 @@ class SchedulingController {
 					   a.duration_minutes,
 					   a.price,
 					   c.name as client_name,
-					   c.phone as client_phone,
+					   c.phone_enc as client_phone_enc,
 					   e.name as employee_name,
 					   s.name as service_name
                 FROM appointments a
@@ -334,7 +360,7 @@ class SchedulingController {
             `,
 				[employeeId]
 			);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
 			console.error('Erro ao buscar agendamentos por funcionário:', err);
 			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
@@ -394,18 +420,45 @@ class SchedulingController {
 						e.statusCode = 400;
 						throw e;
 					}
-					// Tenta localizar cliente pelo telefone
-					const existing = await client.query(
-						`SELECT id FROM clients WHERE phone = $1 LIMIT 1`,
-						[client_phone]
+					const normalizedPhone = normalizePhoneBR(client_phone);
+					if (!normalizedPhone) {
+						const e = new Error('Telefone do cliente inválido');
+						e.statusCode = 400;
+						throw e;
+					}
+					const phoneHash = hmacSha256Hex(normalizedPhone);
+					const phoneEnc = encryptString(normalizedPhone);
+
+					// Tenta localizar cliente por hash; fallback para plaintext durante transição.
+					let existing = await client.query(
+						`SELECT id, phone_hash, phone_enc FROM clients WHERE phone_hash = $1 LIMIT 1`,
+						[phoneHash]
 					);
+					if (!existing.rows.length) {
+						existing = await client.query(
+							`SELECT id, phone_hash, phone_enc FROM clients WHERE phone = $1 LIMIT 1`,
+							[normalizedPhone]
+						);
+						// Opportunistic backfill if found by legacy plaintext.
+						if (existing.rows.length && !existing.rows[0].phone_hash) {
+							try {
+								await client.query(
+									`UPDATE clients SET phone = NULL, phone_enc = $1, phone_hash = $2 WHERE id = $3`,
+									[phoneEnc, phoneHash, existing.rows[0].id]
+								);
+							} catch (be) {
+								console.warn('Scheduling create backfill warning:', be?.message || be);
+							}
+						}
+					}
+
 					if (existing.rows.length) {
 						ensuredClientId = existing.rows[0].id;
 					} else {
 						const inserted = await client.query(
-							`INSERT INTO clients (name, phone, first_visit, last_visit, total_visits, total_spent)
-							 VALUES ($1, $2, CURRENT_DATE, CURRENT_DATE, 0, 0) RETURNING id`,
-							[client_name, client_phone]
+							`INSERT INTO clients (name, phone, phone_enc, phone_hash, first_visit, last_visit, total_visits, total_spent)
+							 VALUES ($1, NULL, $2, $3, CURRENT_DATE, CURRENT_DATE, 0, 0) RETURNING id`,
+							[normalizeText(client_name) || client_name, phoneEnc, phoneHash]
 						);
 						ensuredClientId = inserted.rows[0].id;
 					}
@@ -450,10 +503,12 @@ class SchedulingController {
 				}
 
 				// Cria o agendamento com duration/price
+				const normalizedNotes = normalizeText(notes);
+				const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
 				const { rows } = await client.query(
 					`
-						INSERT INTO appointments (appointment_date, appointment_time, client_id, employee_id, service_id, status, notes, duration_minutes, price, commission_amount)
-						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+						INSERT INTO appointments (appointment_date, appointment_time, client_id, employee_id, service_id, status, notes, notes_enc, duration_minutes, price, commission_amount)
+						VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10)
 						RETURNING *
 					`,
 					[
@@ -463,7 +518,7 @@ class SchedulingController {
 						employee_id,
 						service_id,
 						status || 'scheduled',
-						notes || null,
+						notesEnc,
 						duration_minutes,
 						recommended_price,
 						commission_amount,
@@ -486,7 +541,7 @@ class SchedulingController {
 				// Não falha a criação do agendamento se a notificação falhar
 			}
 			
-			res.status(201).json(createdAppointment);
+			res.status(201).json(decryptPhones(createdAppointment));
 		} catch (err) {
 			if (err?.statusCode) {
 				return res.status(err.statusCode).json({ message: err.message });
@@ -519,7 +574,7 @@ class SchedulingController {
 			await withTransaction(db, async (client) => {
 				// Busca o agendamento antigo para liberar o slot anterior
 				const { rows: oldRows } = await client.query(
-					`SELECT id, client_id, employee_id, service_id, appointment_date, appointment_time, status, notes, duration_minutes, price FROM appointments WHERE id = $1`,
+					`SELECT id, client_id, employee_id, service_id, appointment_date, appointment_time, status, notes, notes_enc, duration_minutes, price FROM appointments WHERE id = $1`,
 					[id]
 				);
 				if (oldRows.length === 0) {
@@ -528,6 +583,9 @@ class SchedulingController {
 					throw e;
 				}
 				oldAppointment = oldRows[0];
+				// Normaliza notes para compatibilidade (usa notes_enc como fonte principal)
+				oldAppointment.notes = oldAppointment.notes_enc ? decryptString(oldAppointment.notes_enc) : oldAppointment.notes;
+				delete oldAppointment.notes_enc;
 
 				// Determina valores finais (mantém antigos se não enviados)
 				const final_date = appointment_date || oldAppointment.appointment_date;
@@ -537,6 +595,8 @@ class SchedulingController {
 				const final_service_id = service_id || oldAppointment.service_id;
 				const final_status = status || oldAppointment.status;
 				const final_notes = typeof notes === 'undefined' ? oldAppointment.notes : notes;
+				const normalizedNotes = normalizeText(final_notes);
+				const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
 
 				// Buscar dados do serviço para garantir duration/price
 				const serviceResult = await client.query(
@@ -605,7 +665,8 @@ class SchedulingController {
 							employee_id = $4,
 							service_id = $5,
 							status = $6,
-							notes = $7,
+							notes = NULL,
+							notes_enc = $7,
 							duration_minutes = $9,
 							price = $10,
 							commission_amount = $11
@@ -619,7 +680,7 @@ class SchedulingController {
 						final_employee_id,
 						final_service_id,
 						final_status,
-						final_notes,
+						notesEnc,
 						id,
 						duration_minutes,
 						recommended_price,
@@ -677,10 +738,10 @@ class SchedulingController {
 						SELECT 
 							a.*,
 							c.name as client_name,
-							c.phone as client_phone,
+							c.phone_enc as client_phone_enc,
 							e.id as employee_id,
 							e.name as employee_name,
-							e.phone as employee_phone,
+							e.phone_enc as employee_phone_enc,
 							s.name as service_name,
 							s.recommended_price as service_price
 						FROM appointments a
@@ -691,7 +752,7 @@ class SchedulingController {
 					`, [id]);
 					
 					if (appointmentDetails.rows.length > 0) {
-						const appointment = appointmentDetails.rows[0];
+						const appointment = decryptPhones(appointmentDetails.rows[0]);
 						
 						// Notificar funcionário sobre mudanças
 						if (appointment.employee_phone) {
@@ -719,7 +780,7 @@ class SchedulingController {
 				// Não falha a atualização se a notificação falhar
 			}
 			
-			res.json(updatedAppointment);
+			res.json(decryptPhones(updatedAppointment));
 		} catch (err) {
 			if (err?.statusCode) {
 				return res.status(err.statusCode).json({ message: err.message });
@@ -744,10 +805,10 @@ class SchedulingController {
 					SELECT 
 						a.*,
 						c.name as client_name,
-						c.phone as client_phone,
+						c.phone_enc as client_phone_enc,
 						e.id as employee_id,
 						e.name as employee_name,
-						e.phone as employee_phone,
+						e.phone_enc as employee_phone_enc,
 						s.name as service_name,
 						s.recommended_price as service_price
 					FROM appointments a
@@ -763,7 +824,7 @@ class SchedulingController {
 					throw e;
 				}
 
-				appointmentData = appointmentRows[0];
+				appointmentData = decryptPhones(appointmentRows[0]);
 
 				// Deleta o agendamento
 				const { rowCount } = await client.query(
@@ -942,9 +1003,11 @@ class SchedulingController {
 					const allowed = ['cash','credit','debit','pix','transfer','boleto'];
 					const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : 'cash');
 					const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
+					const normalizedNotes = normalizeText(notes);
+					const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
 					await client.query(
-						`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes) VALUES ($1,$2,$3,$4)`,
-						[id, paidAmount, chosenMethod, notes || null]
+						`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes, notes_enc) VALUES ($1,$2,$3,NULL,$4)`,
+						[id, paidAmount, chosenMethod, notesEnc]
 					);
 				}
 				if(appt.status === 'completed' && newStatus === 'canceled'){

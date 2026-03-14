@@ -1,17 +1,77 @@
 import pool from '../db/postgre.js';
 import dotenv from 'dotenv';
+import { decryptString } from '../utils/fieldCrypto.js';
 dotenv.config();
+
+function tryDecrypt(value) {
+  if (!value || typeof value !== 'string') return value;
+  try {
+    return decryptString(value);
+  } catch {
+    return value;
+  }
+}
+
+function decryptPhoneFields(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+
+    if ('notes_enc' in out) {
+      out.notes = out.notes_enc ? tryDecrypt(out.notes_enc) : tryDecrypt(out.notes);
+      delete out.notes_enc;
+    } else if ('notes' in out) {
+      out.notes = tryDecrypt(out.notes);
+    }
+
+    if ('client_phone_enc' in out) {
+      out.client_phone = out.client_phone_enc ? tryDecrypt(out.client_phone_enc) : tryDecrypt(out.client_phone);
+      delete out.client_phone_enc;
+    } else if ('client_phone' in out) {
+      out.client_phone = tryDecrypt(out.client_phone);
+    }
+
+    if ('employee_phone_enc' in out) {
+      out.employee_phone = out.employee_phone_enc ? tryDecrypt(out.employee_phone_enc) : tryDecrypt(out.employee_phone);
+      delete out.employee_phone_enc;
+    } else if ('employee_phone' in out) {
+      out.employee_phone = tryDecrypt(out.employee_phone);
+    }
+
+    if ('phone_enc' in out) {
+      out.phone = out.phone_enc ? tryDecrypt(out.phone_enc) : tryDecrypt(out.phone);
+      delete out.phone_enc;
+    } else if ('phone' in out) {
+      out.phone = tryDecrypt(out.phone);
+    }
+
+    return out;
+  });
+
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class WhatsAppNotificationService {
   constructor() {
     this.evolutionApiUrl = 'http://evolution-api:8080';
-    this.apiKey = process.env.EVOLUTION_API_KEY || '2f8c1e7b-4a6d-4e2a-9c3b-7e5d2a1f9b6e';
+    this.apiKey = process.env.EVOLUTION_API_KEY;
     this.defaultInstance = 'main';
+
+    if (!this.apiKey) {
+      console.warn('EVOLUTION_API_KEY não configurada; notificações WhatsApp podem falhar.');
+    }
   }
 
   // Método para fazer requisições à Evolution API
   async makeApiRequest(endpoint, method = 'GET', data = null) {
     const url = `${this.evolutionApiUrl}${endpoint}`;
+
+    if (!this.apiKey) {
+      throw new Error('EVOLUTION_API_KEY não configurada');
+    }
+
     const config = {
       method,
       headers: {
@@ -61,9 +121,12 @@ class WhatsAppNotificationService {
   // Formatar número de telefone para WhatsApp (adicionar prefixo 55)
   formatPhoneNumber(phone) {
     if (!phone) return null;
+
+    const maybeDecryptedPhone = tryDecrypt(phone);
+    if (!maybeDecryptedPhone) return null;
     
     // Remove todos os caracteres não numéricos
-    const cleaned = phone.replace(/\D/g, '');
+    const cleaned = maybeDecryptedPhone.replace(/\D/g, '');
     
     // Se começar com 0, remove (código de área antigo)
     const withoutZero = cleaned.startsWith('0') ? cleaned.substring(1) : cleaned;
@@ -439,8 +502,8 @@ class WhatsAppNotificationService {
     try {
       // Query mais simples para pegar dados básicos
       const basicQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone, 
-               e.name as employee_name, e.phone as employee_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone, 
+               e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone,
                s.name as service_name
         FROM appointments a
         LEFT JOIN clients c ON a.client_id = c.id
@@ -452,7 +515,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(basicQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário com dados básicos
       if (appointment.employee_phone) {
@@ -479,6 +542,7 @@ class WhatsAppNotificationService {
         SELECT 
           e.id,
           e.name,
+          e.phone_enc as phone_enc,
           e.phone,
           e.status,
           COALESCE(en.notification_types, '[]'::jsonb) as notification_types,
@@ -486,8 +550,8 @@ class WhatsAppNotificationService {
         FROM employees e
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active'
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -497,7 +561,7 @@ class WhatsAppNotificationService {
       
       const result = await pool.query(query, [JSON.stringify([notificationType])]);
       console.log(`Encontrados ${result.rows.length} funcionários para notificação '${notificationType}'`);
-      return result.rows;
+      return decryptPhoneFields(result.rows);
     } catch (error) {
       console.error('Erro ao buscar funcionários para notificação:', error);
       return [];
@@ -509,7 +573,7 @@ class WhatsAppNotificationService {
     try {
       console.log(`Buscando agendamentos para funcionário ${employeeId} na data: ${date}`);
       const query = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
@@ -530,7 +594,7 @@ class WhatsAppNotificationService {
           appointment_date: row.appointment_date
         })));
       }
-      return result.rows;
+      return decryptPhoneFields(result.rows);
     } catch (error) {
       console.error('Erro ao buscar agendamentos do dia:', error);
       return [];
@@ -586,9 +650,9 @@ class WhatsAppNotificationService {
   async sendNewAppointmentNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -599,7 +663,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -660,7 +724,7 @@ class WhatsAppNotificationService {
     try {
       // Buscar dados do funcionário
       const result = await pool.query(`
-        SELECT e.name, e.phone, en.enabled
+        SELECT e.name, e.phone_enc as phone_enc, e.phone, en.enabled
         FROM employees e
         LEFT JOIN employee_notifications en ON en.employee_id = e.id
         WHERE e.id = $1 AND e.status = 'active'
@@ -670,7 +734,7 @@ class WhatsAppNotificationService {
         throw new Error('Funcionário não encontrado');
       }
 
-      const employee = result.rows[0];
+      const employee = decryptPhoneFields(result.rows[0]);
 
       if (!employee.enabled) {
         throw new Error('Notificações desabilitadas para este funcionário');
@@ -704,12 +768,12 @@ class WhatsAppNotificationService {
       if (!targetEmployees) {
         // Buscar todos os funcionários ativos se não especificado
         const result = await pool.query(`
-          SELECT e.id, e.name, e.phone, COALESCE(u.role,'employee') AS role
+          SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone, COALESCE(u.role,'employee') AS role
           FROM employees e
           LEFT JOIN users u ON u.id = e.user_id
-          WHERE e.status = 'active' AND e.phone IS NOT NULL
+          WHERE e.status = 'active' AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
         `);
-        targetEmployees = result.rows;
+        targetEmployees = decryptPhoneFields(result.rows);
       }
 
       const notifications = [];
@@ -758,9 +822,9 @@ class WhatsAppNotificationService {
   async sendAppointmentConfirmationNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -771,7 +835,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -796,9 +860,9 @@ class WhatsAppNotificationService {
   async sendAppointmentCompletionNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -809,7 +873,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -834,9 +898,9 @@ class WhatsAppNotificationService {
   async sendAppointmentCancellationNotification(appointmentId, reason = 'Cancelado pelo sistema') {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -847,7 +911,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -943,8 +1007,8 @@ Volte sempre! 😊✨`;
     try {
       // Query mais simples para pegar dados básicos
       const basicQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone, 
-               e.name as employee_name, e.phone as employee_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone, 
+               e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone,
                s.name as service_name
         FROM appointments a
         LEFT JOIN clients c ON a.client_id = c.id
@@ -956,7 +1020,7 @@ Volte sempre! 😊✨`;
       const result = await pool.query(basicQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário com dados básicos
       if (appointment.employee_phone) {
@@ -1024,14 +1088,14 @@ Volte sempre! 😊✨`;
     try {
       // Buscar gerentes e donos
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON en.employee_id = e.id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1040,7 +1104,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0) {
         console.log('Nenhum gerente/dono encontrado para análise diária');
@@ -1174,14 +1238,14 @@ Volte sempre! 😊✨`;
     try {
       // Buscar gerentes e donos que devem receber notificações do sistema
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1190,7 +1254,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0) {
         console.log('Nenhum gerente/dono configurado para receber notificações do sistema');
@@ -1414,13 +1478,13 @@ Volte sempre! 😊✨`;
   async sendLowStockNotification(products) {
     try {
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1429,7 +1493,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0 || products.length === 0) return;
 
@@ -1516,7 +1580,7 @@ Volte sempre! 😊✨`;
   async sendAppointmentReminder(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
                e.name as employee_name
         FROM appointments a
@@ -1529,7 +1593,7 @@ Volte sempre! 😊✨`;
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       if (appointment.client_phone) {
         const message = this.createAppointmentReminderMessage(appointment);

@@ -11,6 +11,9 @@ export const createTables = async () => {
         role VARCHAR(20) DEFAULT 'employee',
         reset_token VARCHAR(255),
         reset_token_expires TIMESTAMP,
+        email_enc TEXT,
+        email_hash CHAR(64),
+        reset_token_hash CHAR(64),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );`,
@@ -20,6 +23,10 @@ export const createTables = async () => {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE,
         phone VARCHAR(20),
+        email_enc TEXT,
+        email_hash CHAR(64),
+        phone_enc TEXT,
+        phone_hash CHAR(64),
         hire_date DATE,
         status VARCHAR(20) DEFAULT 'active',
         base_salary DECIMAL(10,2) DEFAULT 0,
@@ -64,7 +71,16 @@ export const createTables = async () => {
         phone VARCHAR(20),
         address TEXT,
         birth_date DATE,
+        birth_month SMALLINT,
+        birth_day SMALLINT,
         notes TEXT,
+        email_enc TEXT,
+        email_hash CHAR(64),
+        phone_enc TEXT,
+        phone_hash CHAR(64),
+        address_enc TEXT,
+        birth_date_enc TEXT,
+        notes_enc TEXT,
         first_visit DATE,
         last_visit DATE,
         total_visits INTEGER DEFAULT 0,
@@ -84,6 +100,7 @@ export const createTables = async () => {
         price DECIMAL(10,2) NOT NULL,
         commission_amount DECIMAL(10,2),
         notes TEXT,
+        notes_enc TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (client_id) REFERENCES clients(id),
@@ -109,6 +126,7 @@ export const createTables = async () => {
         max_stock_level INTEGER DEFAULT 0,
         supplier_name VARCHAR(255),
         supplier_contact TEXT,
+        supplier_contact_enc TEXT,
         last_restocked DATE,
         is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -144,6 +162,7 @@ export const createTables = async () => {
         payment_method VARCHAR(20) NOT NULL,
         status VARCHAR(20) DEFAULT 'completed',
         notes TEXT,
+        notes_enc TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (client_id) REFERENCES clients(id),
         FOREIGN KEY (employee_id) REFERENCES employees(id)
@@ -236,6 +255,9 @@ export const createTables = async () => {
         parent_expense_id INTEGER,
         tags TEXT[],
         notes TEXT,
+        receipt_number_enc TEXT,
+        supplier_name_enc TEXT,
+        notes_enc TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES expense_categories(id),
@@ -258,8 +280,89 @@ export const createTables = async () => {
       await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS parent_expense_id INTEGER;`);
       await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS tags TEXT[];`);
       await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+
+      // Colunas criptografadas (financeiro/PII textual)
+      await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_number_enc TEXT;`);
+      await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS supplier_name_enc TEXT;`);
+      await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
     } catch (err) {
       console.log('Algumas colunas já existiam ou houve erro ao adicionar:', err.message);
+    }
+
+    // Adicionar colunas criptografadas/hash para users/employees/clients/products (se não existirem)
+    try {
+      // users
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_enc TEXT;`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_hash CHAR(64);`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash CHAR(64);`);
+
+      // employees
+      await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS email_enc TEXT;`);
+      await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS email_hash CHAR(64);`);
+      await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone_enc TEXT;`);
+      await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone_hash CHAR(64);`);
+
+      // clients
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enc TEXT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_hash CHAR(64);`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone_enc TEXT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone_hash CHAR(64);`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_enc TEXT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS birth_date_enc TEXT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS birth_month SMALLINT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS birth_day SMALLINT;`);
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
+
+      // products
+      await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_contact_enc TEXT;`);
+
+      // appointments/sales (notes)
+      await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
+      await pool.query(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
+    } catch (err) {
+      console.log('Algumas colunas crypto/hash já existiam ou houve erro ao adicionar:', err.message);
+    }
+
+    // Transição: permitir users.email ficar NULL e mover unicidade para hash (evita plaintext obrigatório)
+    try {
+      await pool.query(`ALTER TABLE users ALTER COLUMN email DROP NOT NULL;`);
+    } catch (err) {
+      // ignore if already nullable
+      void err;
+    }
+
+    // Remover UNIQUE antigo de users.email (se existir) para permitir limpar plaintext
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE table_name = 'users' AND constraint_type = 'UNIQUE' AND constraint_name = 'users_email_key'
+          ) THEN
+            ALTER TABLE users DROP CONSTRAINT users_email_key;
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
+      console.log('Aviso ao ajustar constraint users_email_key:', err.message);
+    }
+
+    // Remover UNIQUE antigo de employees.email (se existir) e mover para hash
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE table_name = 'employees' AND constraint_type = 'UNIQUE' AND constraint_name = 'employees_email_key'
+          ) THEN
+            ALTER TABLE employees DROP CONSTRAINT employees_email_key;
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
+      console.log('Aviso ao ajustar constraint employees_email_key:', err.message);
     }
 
     // Adicionar colunas faltantes na tabela stock_movements para saídas de inventário
@@ -361,6 +464,15 @@ export const createTables = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_registered_by ON stock_movements(registered_by);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements(created_at DESC);`);
 
+    // Índices/constraints para colunas hash (lookup exato e unicidade)
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_hash ON users(email_hash) WHERE email_hash IS NOT NULL;`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_employees_email_hash ON employees(email_hash) WHERE email_hash IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_employees_phone_hash ON employees(phone_hash) WHERE phone_hash IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_email_hash ON clients(email_hash) WHERE email_hash IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_phone_hash ON clients(phone_hash) WHERE phone_hash IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_birth_month_day ON clients(birth_month, birth_day) WHERE birth_month IS NOT NULL AND birth_day IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_reset_token_hash ON users(reset_token_hash) WHERE reset_token_hash IS NOT NULL;`);
+
     // Pagamentos de agendamentos (serviços)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS appointment_payments (
@@ -370,9 +482,18 @@ export const createTables = async () => {
         payment_method VARCHAR(30) NOT NULL,
         paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         notes TEXT,
+        notes_enc TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Evolução: adicionar notes_enc em appointment_payments (se tabela já existir)
+    try {
+      await pool.query(`ALTER TABLE appointment_payments ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
+    } catch (err) {
+      // ignore
+      void err;
+    }
 
     // Índices para pagamentos de agendamentos
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_appt_payments_appt ON appointment_payments(appointment_id);`);

@@ -1,8 +1,26 @@
 import pool from '../db/postgre.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString, encryptString, normalizeText } from '../utils/fieldCrypto.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
+
+function decryptRegisteredByEmail(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('registered_by_email_enc' in out) {
+      out.registered_by_email = out.registered_by_email_enc
+        ? decryptString(out.registered_by_email_enc)
+        : out.registered_by_email;
+      delete out.registered_by_email_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class InventoryController {
   // GET /inventory - Otimizado com paginação e índices
@@ -297,6 +315,7 @@ class InventoryController {
           p.sku as product_sku,
           p.current_stock as current_product_stock,
           pc.name as category_name,
+          u.email_enc as registered_by_email_enc,
           u.email as registered_by_email
         FROM stock_movements sm
         INNER JOIN products p ON sm.product_id = p.id
@@ -314,7 +333,7 @@ class InventoryController {
       `, queryParams);
 
       res.json({
-        outputs: rows,
+        outputs: decryptRegisteredByEmail(rows),
         pagination: {
           currentPage: page,
           totalItems: parseInt(countRows[0].total),
@@ -340,6 +359,7 @@ class InventoryController {
           p.sku as product_sku,
           p.current_stock as current_product_stock,
           pc.name as category_name,
+          u.email_enc as registered_by_email_enc,
           u.email as registered_by_email
         FROM stock_movements sm
         INNER JOIN products p ON sm.product_id = p.id
@@ -352,7 +372,7 @@ class InventoryController {
         return res.status(404).json({ message: 'Saída não encontrada' });
       }
 
-      res.json(rows[0]);
+      res.json(decryptRegisteredByEmail(rows[0]));
     } catch (err) {
       console.error('Erro ao buscar saída:', err);
       res.status(500).json({ message: 'Erro ao buscar saída', ...buildErrorResponse(err) });
@@ -440,6 +460,9 @@ class InventoryController {
           }
         }
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         // Inserir registro de venda
         const { rows: saleRows } = await client.query(`
           INSERT INTO sales (
@@ -451,8 +474,9 @@ class InventoryController {
             total_amount,
             payment_method,
             status,
-            notes
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            notes,
+            notes_enc
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
           RETURNING *
         `, [
           employeeId,
@@ -465,7 +489,7 @@ class InventoryController {
             ? String(req.body.payment_method).toLowerCase()
             : 'cash',
           'completed',
-          `Venda via saída de estoque - ${notes || ''}`
+          saleNotesEnc
         ]);
 
         const sale = saleRows[0];
@@ -592,6 +616,9 @@ class InventoryController {
           }
         }
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || reason || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         const { rows: saleRows } = await client.query(`
           INSERT INTO sales (
             employee_id,
@@ -602,8 +629,9 @@ class InventoryController {
             total_amount,
             payment_method,
             status,
-            notes
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            notes,
+            notes_enc
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
           RETURNING *
         `, [
           employeeId,
@@ -614,7 +642,7 @@ class InventoryController {
           totalAmount,
           'cash',
           'completed',
-          `Venda via saída de estoque - ${notes || reason || ''}`
+          saleNotesEnc
         ]);
 
         const sale = saleRows[0];
@@ -643,11 +671,14 @@ class InventoryController {
         const subtotal = unitPrice * quantity;
         const totalAmount = subtotal;
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || reason || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         await client.query(`
           UPDATE sales 
-          SET subtotal = $1, total_amount = $2, notes = $3, updated_at = NOW()
+          SET subtotal = $1, total_amount = $2, notes = NULL, notes_enc = $3, updated_at = NOW()
           WHERE id = $4
-        `, [subtotal, totalAmount, `Venda via saída de estoque - ${notes || reason || ''}`, original.reference_id]);
+        `, [subtotal, totalAmount, saleNotesEnc, original.reference_id]);
 
         await client.query(`
           UPDATE sale_items 

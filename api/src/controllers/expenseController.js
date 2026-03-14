@@ -2,9 +2,35 @@ import pool from '../db/postgre.js';
 
 import whatsappService from '../services/whatsappNotificationService.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString, encryptString, normalizeText } from '../utils/fieldCrypto.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
+
+function decryptExpenseRow(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+
+    if ('receipt_number_enc' in out) {
+      out.receipt_number = out.receipt_number_enc ? decryptString(out.receipt_number_enc) : out.receipt_number;
+      delete out.receipt_number_enc;
+    }
+    if ('supplier_name_enc' in out) {
+      out.supplier_name = out.supplier_name_enc ? decryptString(out.supplier_name_enc) : out.supplier_name;
+      delete out.supplier_name_enc;
+    }
+    if ('notes_enc' in out) {
+      out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
+      delete out.notes_enc;
+    }
+
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class ExpenseController {
   // GET /expenses - Listar todas as despesas
@@ -43,7 +69,8 @@ class ExpenseController {
       }
 
       if (search) {
-        whereConditions.push(`(description ILIKE $${paramIndex} OR receipt_number ILIKE $${paramIndex})`);
+        // receipt_number passa a ser criptografado; mantemos busca apenas por descrição.
+        whereConditions.push(`(description ILIKE $${paramIndex})`);
         queryParams.push(`%${search}%`);
         paramIndex++;
       }
@@ -52,7 +79,9 @@ class ExpenseController {
 
       // Query principal com paginação
       const { rows } = await db.query(`
-        SELECT * FROM expenses 
+        SELECT 
+          e.*
+        FROM expenses e
         ${whereClause}
         ORDER BY expense_date DESC, created_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -67,7 +96,7 @@ class ExpenseController {
       const totalPages = Math.ceil(total / limit);
 
       res.json({
-        expenses: rows,
+        expenses: decryptExpenseRow(rows),
         pagination: {
           currentPage: page,
           totalPages,
@@ -95,7 +124,7 @@ class ExpenseController {
         return res.status(404).json({ message: 'Despesa não encontrada' });
       }
 
-      res.json(rows[0]);
+      res.json(decryptExpenseRow(rows[0]));
     } catch (err) {
       console.error('Erro ao buscar despesa:', err);
       res.status(500).json({ message: 'Erro ao buscar despesa', ...buildErrorResponse(err) });
@@ -119,11 +148,14 @@ class ExpenseController {
         return res.status(400).json({ message: 'O valor da despesa deve ser maior que zero' });
       }
 
+      const receiptNumberNorm = normalizeText(receipt_number);
+      const notesNorm = normalizeText(notes);
+
       const { rows } = await db.query(`
-        INSERT INTO expenses (category, description, amount, expense_date, payment_method, receipt_number, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO expenses (category, description, amount, expense_date, payment_method, receipt_number, receipt_number_enc, notes, notes_enc)
+        VALUES ($1, $2, $3, $4, $5, NULL, $6, NULL, $7)
         RETURNING *
-      `, [category, description, amount, expense_date, payment_method, receipt_number || null, notes || null]);
+      `, [category, description, amount, expense_date, payment_method, receiptNumberNorm ? encryptString(receiptNumberNorm) : null, notesNorm ? encryptString(notesNorm) : null]);
 
       // Enviar notificação de nova despesa
       try {
@@ -143,7 +175,7 @@ class ExpenseController {
         console.error('Erro ao enviar notificação de despesa:', notificationError);
       }
 
-      res.status(201).json(rows[0]);
+      res.status(201).json(decryptExpenseRow(rows[0]));
     } catch (err) {
       console.error('Erro ao criar despesa:', err);
       res.status(500).json({ message: 'Erro ao criar despesa', ...buildErrorResponse(err) });
@@ -169,26 +201,41 @@ class ExpenseController {
       }
 
       const current = existingRows[0];
+
+      const currentReceiptPlain = current.receipt_number;
+      const currentNotesPlain = current.notes;
+
+      const finalReceiptPlain = receipt_number !== undefined ? normalizeText(receipt_number) : normalizeText(currentReceiptPlain);
+      const finalNotesPlain = notes !== undefined ? normalizeText(notes) : normalizeText(currentNotesPlain);
+
+      const finalReceiptEnc = receipt_number !== undefined
+        ? (finalReceiptPlain ? encryptString(finalReceiptPlain) : null)
+        : (current.receipt_number_enc || (finalReceiptPlain ? encryptString(finalReceiptPlain) : null));
+
+      const finalNotesEnc = notes !== undefined
+        ? (finalNotesPlain ? encryptString(finalNotesPlain) : null)
+        : (current.notes_enc || (finalNotesPlain ? encryptString(finalNotesPlain) : null));
+
       const updated = {
         category: category ?? current.category,
         description: description ?? current.description,
         amount: amount ?? current.amount,
         expense_date: expense_date ?? current.expense_date,
         payment_method: payment_method ?? current.payment_method,
-        receipt_number: receipt_number ?? current.receipt_number,
-        notes: notes ?? current.notes
+        receipt_number_enc: finalReceiptEnc,
+        notes_enc: finalNotesEnc
       };
 
       const { rows } = await db.query(`
         UPDATE expenses 
         SET category = $1, description = $2, amount = $3, expense_date = $4, 
-            payment_method = $5, receipt_number = $6, notes = $7, updated_at = CURRENT_TIMESTAMP
+            payment_method = $5, receipt_number = NULL, receipt_number_enc = $6, notes = NULL, notes_enc = $7, updated_at = CURRENT_TIMESTAMP
         WHERE id = $8
         RETURNING *
       `, [updated.category, updated.description, updated.amount, updated.expense_date, 
-          updated.payment_method, updated.receipt_number, updated.notes, id]);
+          updated.payment_method, updated.receipt_number_enc, updated.notes_enc, id]);
 
-      res.json(rows[0]);
+      res.json(decryptExpenseRow(rows[0]));
     } catch (err) {
       console.error('Erro ao atualizar despesa:', err);
       res.status(500).json({ message: 'Erro ao atualizar despesa', ...buildErrorResponse(err) });

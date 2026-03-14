@@ -1,9 +1,26 @@
 import pool from '../db/postgre.js';
 import * as bcrypt from 'bcryptjs';
 import buildErrorResponse from '../utils/errorResponse.js';
+import {
+  decryptString,
+  encryptString,
+  hmacSha256Hex,
+  normalizeEmail,
+  normalizePhoneBR,
+} from '../utils/fieldCrypto.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
+
+function decryptEmployeeRow(row) {
+  if (!row) return row;
+  const email = row.email_enc ? decryptString(row.email_enc) : row.email;
+  const phone = row.phone_enc ? decryptString(row.phone_enc) : row.phone;
+
+  // eslint-disable-next-line no-unused-vars
+  const { email_enc, phone_enc, email_hash, phone_hash, ...rest } = row;
+  return { ...rest, email, phone };
+}
 
 const EmployeeController = {
   async list(req, res) {
@@ -50,7 +67,7 @@ const EmployeeController = {
           : 0;
 
         return {
-          ...employee,
+          ...decryptEmployeeRow(employee),
           monthlyStats: {
             servicesCompleted: Number(stat.services_completed),
             totalRevenue: Number(stat.total_revenue),
@@ -73,8 +90,8 @@ const EmployeeController = {
   async listBasic(req, res) {
     const db = getPool(req);
     try {
-      const { rows } = await db.query('SELECT id, name, email, status FROM employees ORDER BY id');
-      return res.json(rows || []);
+      const { rows } = await db.query('SELECT id, name, email, email_enc, status FROM employees ORDER BY id');
+      return res.json((rows || []).map(decryptEmployeeRow));
     } catch (err) {
       console.error('Erro ao buscar lista básica de funcionários:', err);
       return res
@@ -94,7 +111,7 @@ const EmployeeController = {
     try {
       const { rows } = await db.query('SELECT * FROM employees WHERE id = $1', [id]);
       if (!rows[0]) return res.status(404).json({ message: 'Funcionário não encontrado' });
-      return res.json(rows[0]);
+      return res.json(decryptEmployeeRow(rows[0]));
     } catch (err) {
       console.error('Erro ao buscar funcionário:', err);
       return res
@@ -109,7 +126,17 @@ const EmployeeController = {
 
     try {
       // Checa duplicidade de e-mail
-      const emailCheck = await db.query('SELECT id FROM employees WHERE email = $1', [email]);
+      const normalizedEmail = normalizeEmail(email);
+      if (!normalizedEmail) {
+        return res.status(400).json({ message: 'E-mail é obrigatório' });
+      }
+      const normalizedPhone = normalizePhoneBR(phone);
+      const emailHash = hmacSha256Hex(normalizedEmail);
+      const phoneHash = normalizedPhone ? hmacSha256Hex(normalizedPhone) : null;
+      const emailEnc = encryptString(normalizedEmail);
+      const phoneEnc = normalizedPhone ? encryptString(normalizedPhone) : null;
+
+      const emailCheck = await db.query('SELECT id FROM employees WHERE email_hash = $1 LIMIT 1', [emailHash]);
       if (emailCheck.rows.length > 0) {
         return res.status(409).json({ message: 'E-mail já cadastrado' });
       }
@@ -117,14 +144,14 @@ const EmployeeController = {
       const hashedPassword = bcrypt.hashSync(password, 8);
 
       const { rows: userRows } = await db.query(
-        'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role',
-        [email, hashedPassword, role]
+        'INSERT INTO users (email, email_enc, email_hash, password_hash, role) VALUES (NULL, $1, $2, $3, $4) RETURNING id, email, email_enc, role',
+        [emailEnc, emailHash, hashedPassword, role || 'employee']
       );
       const user = userRows[0];
 
       const { rows } = await db.query(
-        'INSERT INTO employees (user_id, name, email, phone, hire_date, base_salary, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-        [user.id, name, email, phone, hire_date, base_salary, 'active']
+        'INSERT INTO employees (user_id, name, email, phone, email_enc, email_hash, phone_enc, phone_hash, hire_date, base_salary, status) VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+        [user.id, name, emailEnc, emailHash, phoneEnc, phoneHash, hire_date, base_salary, 'active']
       );
 
       // Enviar notificação WhatsApp para gerentes/donos
@@ -134,8 +161,8 @@ const EmployeeController = {
           'employee_created',
           {
             name,
-            email,
-            phone: phone || 'Não informado',
+            email: normalizedEmail,
+            phone: normalizedPhone || 'Não informado',
             role,
             hire_date: hire_date || 'Não informada',
           },
@@ -145,7 +172,7 @@ const EmployeeController = {
         console.error('Erro ao enviar notificação de novo funcionário:', notificationError);
       }
 
-      return res.status(201).json(rows[0]);
+      return res.status(201).json(decryptEmployeeRow(rows[0]));
     } catch (err) {
       console.error('Erro ao criar funcionário:', err);
       return res
@@ -162,24 +189,49 @@ const EmployeeController = {
     try {
       // Buscar dados atuais para comparação
       const currentResult = await db.query('SELECT * FROM employees WHERE id = $1', [id]);
-      const currentEmployee = currentResult.rows[0];
+      const currentRow = currentResult.rows[0];
+      const currentEmployee = decryptEmployeeRow(currentRow);
 
       if (!currentEmployee) {
         return res.status(404).json({ message: 'Funcionário não encontrado' });
       }
 
+      const normalizedEmail = normalizeEmail(email) || null;
+      const normalizedPhone = normalizePhoneBR(phone) || null;
+
+      const emailHash = normalizedEmail ? hmacSha256Hex(normalizedEmail) : (currentRow?.email_hash || null);
+      const phoneHash = normalizedPhone ? hmacSha256Hex(normalizedPhone) : (currentRow?.phone_hash || null);
+      const emailEnc = normalizedEmail ? encryptString(normalizedEmail) : (currentRow?.email_enc || null);
+      const phoneEnc = normalizedPhone ? encryptString(normalizedPhone) : (currentRow?.phone_enc || null);
+
+      // Se o e-mail mudou, valida duplicidade
+      if (emailHash && normalizedEmail && normalizedEmail !== currentEmployee.email) {
+        const dup = await db.query('SELECT id FROM employees WHERE email_hash = $1 AND id != $2 LIMIT 1', [emailHash, id]);
+        if (dup.rows.length) {
+          return res.status(409).json({ message: 'E-mail já cadastrado' });
+        }
+      }
+
       const { rows } = await db.query(
-        'UPDATE employees SET name=$1, email=$2, phone=$3, hire_date=$4, base_salary=$5, status=$6, updated_at=NOW() WHERE id=$7 RETURNING *',
-        [name, email, phone, hire_date, base_salary, status, id]
+        'UPDATE employees SET name=$1, email=NULL, phone=NULL, email_enc=$2, email_hash=$3, phone_enc=$4, phone_hash=$5, hire_date=$6, base_salary=$7, status=$8, updated_at=NOW() WHERE id=$9 RETURNING *',
+        [name, emailEnc, emailHash, phoneEnc, phoneHash, hire_date, base_salary, status, id]
       );
+
+      // Mantém tabela users sincronizada para login
+      const userId = rows[0]?.user_id;
+      if (userId && emailEnc && emailHash) {
+        await db.query('UPDATE users SET email=NULL, email_enc=$1, email_hash=$2 WHERE id=$3', [emailEnc, emailHash, userId]);
+      }
+
+      const updatedEmployee = decryptEmployeeRow(rows[0]);
 
       // Enviar notificação WhatsApp para gerentes/donos sobre alterações
       try {
         const whatsappService = (await import('../services/whatsappNotificationService.js')).default;
         const changes = {};
         if (name && name !== currentEmployee.name) changes.name = name;
-        if (email && email !== currentEmployee.email) changes.email = email;
-        if (phone && phone !== currentEmployee.phone) changes.phone = phone;
+        if (updatedEmployee.email && updatedEmployee.email !== currentEmployee.email) changes.email = updatedEmployee.email;
+        if (updatedEmployee.phone && updatedEmployee.phone !== currentEmployee.phone) changes.phone = updatedEmployee.phone;
         if (base_salary && base_salary !== currentEmployee.base_salary) changes.base_salary = base_salary;
         if (status && status !== currentEmployee.status) changes.status = status;
 
@@ -187,14 +239,14 @@ const EmployeeController = {
           await whatsappService.sendSystemChangeNotification(
             'employee_updated',
             changes,
-            `Funcionário: ${rows[0].name}`
+            `Funcionário: ${updatedEmployee.name}`
           );
         }
       } catch (notificationError) {
         console.error('Erro ao enviar notificação de atualização de funcionário:', notificationError);
       }
 
-      return res.json(rows[0]);
+      return res.json(updatedEmployee);
     } catch (err) {
       console.error('Erro ao atualizar funcionário:', err);
       return res

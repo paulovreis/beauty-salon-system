@@ -1,8 +1,24 @@
 import pool from '../db/postgre.js';
 import whatsappService from '../services/whatsappNotificationService.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString } from '../utils/fieldCrypto.js';
 
 const getPool = (req) => req.pool || pool;
+
+function decryptEmployeePhone(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('employee_phone_enc' in out) {
+      out.employee_phone = out.employee_phone_enc ? decryptString(out.employee_phone_enc) : out.employee_phone;
+      delete out.employee_phone_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 // Lista centralizada dos tipos válidos (mantém sincronizado com getNotificationTypes)
 const VALID_NOTIFICATION_TYPES = [
@@ -225,6 +241,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
         e.id as employee_id,
         e.name as employee_name,
         u.role as employee_role,
+        e.phone_enc as employee_phone_enc,
         e.phone as employee_phone,
         en.notification_types,
         en.enabled,
@@ -253,6 +270,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
         e.id as employee_id,
         e.name as employee_name,
         u.role as employee_role,
+        e.phone_enc as employee_phone_enc,
         e.phone as employee_phone,
         en.notification_types,
         en.enabled,
@@ -263,7 +281,7 @@ export const getAllEmployeeNotificationSettings = async (req, res) => {
       ORDER BY e.name
     `);
 
-    const sanitized = finalResult.rows.map(r => {
+    const sanitized = decryptEmployeePhone(finalResult.rows).map(r => {
       let types = [];
       try {
         types = Array.isArray(r.notification_types)
@@ -616,7 +634,7 @@ export const sendTestNotification = async (req, res) => {
 
     // Buscar dados do funcionário
     const employeeResult = await db.query(`
-      SELECT e.name, e.phone, en.enabled
+      SELECT e.name, e.phone_enc, e.phone, en.enabled
       FROM employees e
       LEFT JOIN employee_notifications en ON en.employee_id = e.id
       WHERE e.id = $1
@@ -629,7 +647,11 @@ export const sendTestNotification = async (req, res) => {
       });
     }
 
-    const employee = employeeResult.rows[0];
+    const employeeRaw = employeeResult.rows[0];
+    const employee = {
+      ...employeeRaw,
+      phone: employeeRaw.phone_enc ? decryptString(employeeRaw.phone_enc) : employeeRaw.phone,
+    };
 
     if (!employee.enabled) {
       return res.status(400).json({

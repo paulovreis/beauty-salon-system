@@ -1,5 +1,21 @@
 import pool from '../db/postgre.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString } from '../utils/fieldCrypto.js';
+
+function decryptClientPhone(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('phone_enc' in out) {
+      out.phone = out.phone_enc ? decryptString(out.phone_enc) : out.phone;
+      delete out.phone_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class DashboardController {
   async getStats(req, res) {
@@ -265,7 +281,8 @@ class DashboardController {
       const topCustomers = await db.query(`
         SELECT 
           c.name,
-          c.phone,
+          c.phone_enc as phone_enc,
+          c.phone as phone,
           c.total_visits,
           c.total_spent,
           COALESCE(c.last_visit, MAX(a.appointment_date)) as last_visit,
@@ -277,7 +294,7 @@ class DashboardController {
         FROM clients c
         LEFT JOIN appointments a ON a.client_id = c.id AND a.status = 'completed'
         WHERE c.total_visits > 0
-        GROUP BY c.id, c.name, c.phone, c.total_visits, c.total_spent, c.last_visit
+        GROUP BY c.id, c.name, c.phone_enc, c.phone, c.total_visits, c.total_spent, c.last_visit
         ORDER BY c.total_spent DESC
         LIMIT 20
       `);
@@ -328,7 +345,7 @@ class DashboardController {
       `);
 
       res.json({
-        topCustomers: topCustomers.rows,
+        topCustomers: decryptClientPhone(topCustomers.rows),
         customerSegments: customerSegments.rows,
         newCustomersByMonth: newCustomersByMonth.rows,
         retentionAnalysis: retentionAnalysis.rows[0]
@@ -704,18 +721,20 @@ class DashboardController {
         WITH last_visits AS (
           SELECT c.id,
                  c.name,
-                 c.phone,
+                 c.phone_enc as phone_enc,
+                 c.phone as phone,
                  c.total_visits,
                  c.total_spent,
                  COALESCE(c.last_visit, MAX(a.appointment_date)) AS last_visit
           FROM clients c
           LEFT JOIN appointments a ON a.client_id = c.id AND a.status = 'completed'
           WHERE c.total_visits > 0
-          GROUP BY c.id, c.name, c.phone, c.total_visits, c.total_spent, c.last_visit
+          GROUP BY c.id, c.name, c.phone_enc, c.phone, c.total_visits, c.total_spent, c.last_visit
         )
         SELECT 
           name,
           phone,
+          phone_enc,
           last_visit,
           total_visits,
           total_spent,
@@ -735,7 +754,7 @@ class DashboardController {
       res.json({
         demandForecast: demandForecast.rows,
         seasonalityAnalysis: seasonalityAnalysis.rows,
-        churnRisk: churnRisk.rows
+        churnRisk: decryptClientPhone(churnRisk.rows)
       });
     } catch (err) {
       console.error('Erro ao buscar análise preditiva:', err);
@@ -1010,7 +1029,8 @@ class DashboardController {
       pool.query(`
         SELECT 
           c.name,
-          c.phone,
+          c.phone_enc as phone_enc,
+          c.phone as phone,
           c.total_visits,
           c.total_spent,
           c.last_visit,
@@ -1059,7 +1079,7 @@ class DashboardController {
     ]);
 
     return {
-      topCustomers: topCustomers.rows,
+      topCustomers: decryptClientPhone(topCustomers.rows),
       customerSegments: customerSegments.rows,
       newCustomersByMonth: newCustomersByMonth.rows,
       retentionAnalysis: retentionAnalysis.rows[0]
@@ -1388,7 +1408,8 @@ class DashboardController {
       pool.query(`
         SELECT 
           c.name,
-          c.phone,
+          c.phone_enc as phone_enc,
+          c.phone as phone,
           c.last_visit,
           c.total_visits,
           c.total_spent,
@@ -1410,7 +1431,7 @@ class DashboardController {
     return {
       demandForecast: demandForecast.rows,
       seasonalityAnalysis: seasonalityAnalysis.rows,
-      churnRisk: churnRisk.rows
+      churnRisk: decryptClientPhone(churnRisk.rows)
     };
   }
 }

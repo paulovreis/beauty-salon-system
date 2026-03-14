@@ -1,6 +1,22 @@
 import pool from "../db/postgre.js";
 import whatsappService from "../services/whatsappNotificationService.js";
 import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString, encryptString, normalizeText } from '../utils/fieldCrypto.js';
+
+function decryptProductRows(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('supplier_contact_enc' in out) {
+      out.supplier_contact = out.supplier_contact_enc ? decryptString(out.supplier_contact_enc) : out.supplier_contact;
+      delete out.supplier_contact_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class ProductController {
   constructor() {}
@@ -44,7 +60,7 @@ class ProductController {
       const { rows } = await db.query(`
         SELECT 
           p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
           p.last_restocked, p.is_active, p.created_at, p.updated_at,
           c.name as category_name,
           CASE 
@@ -74,7 +90,7 @@ class ProductController {
       `, queryParams);
 
       res.json({
-        products: rows,
+        products: decryptProductRows(rows),
         pagination: {
           currentPage: page,
           totalItems: parseInt(countRows[0].total),
@@ -95,7 +111,7 @@ class ProductController {
       const { rows } = await db.query(
         `
                 SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+               p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
                        p.last_restocked, p.is_active, p.created_at, p.updated_at, 
                        c.name as category_name
                 FROM products p
@@ -107,7 +123,7 @@ class ProductController {
       if (rows.length === 0) {
         return res.status(404).json({ message: "Produto não encontrado" });
       }
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
       console.error("Erro ao buscar produto:", err);
       res.status(500).json({ message: "Erro ao buscar produto", ...buildErrorResponse(err) });
@@ -142,8 +158,8 @@ class ProductController {
       }
       const { rows } = await db.query(
         `
-                INSERT INTO products (name, description, sku, cost_price, selling_price, current_stock, min_stock_level, max_stock_level, supplier_name, supplier_contact, category_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *
+          INSERT INTO products (name, description, sku, cost_price, selling_price, current_stock, min_stock_level, max_stock_level, supplier_name, supplier_contact, supplier_contact_enc, category_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11) RETURNING *
             `,
         [
           name,
@@ -155,7 +171,7 @@ class ProductController {
           min_stock_level,
           max_stock_level,
           supplier_name,
-          supplier_contact,
+          normalizeText(supplier_contact) ? encryptString(normalizeText(supplier_contact)) : null,
           category_id,
         ]
       );
@@ -177,7 +193,7 @@ class ProductController {
         console.error('Erro ao enviar notificação de novo produto:', notificationError);
       }
       
-      res.status(201).json(rows[0]);
+      res.status(201).json(decryptProductRows(rows[0]));
     } catch (err) {
       console.error("Erro ao criar produto:", err);
       res.status(500).json({ message: "Erro ao criar produto", ...buildErrorResponse(err) });
@@ -222,6 +238,12 @@ class ProductController {
             .json({ message: "Já existe um produto com este nome" });
         }
       }
+      const currentRow = current.rows[0];
+      const finalSupplierContactPlain = supplier_contact !== undefined ? normalizeText(supplier_contact) : normalizeText(currentRow.supplier_contact);
+      const finalSupplierContactEnc = supplier_contact !== undefined
+        ? (finalSupplierContactPlain ? encryptString(finalSupplierContactPlain) : null)
+        : (currentRow.supplier_contact_enc || (finalSupplierContactPlain ? encryptString(finalSupplierContactPlain) : null));
+
       const updated = {
         name: name ?? current.rows[0].name,
         description: description ?? current.rows[0].description,
@@ -232,7 +254,7 @@ class ProductController {
         min_stock_level: min_stock_level ?? current.rows[0].min_stock_level,
         max_stock_level: max_stock_level ?? current.rows[0].max_stock_level,
         supplier_name: supplier_name ?? current.rows[0].supplier_name,
-        supplier_contact: supplier_contact ?? current.rows[0].supplier_contact,
+        supplier_contact_enc: finalSupplierContactEnc,
         category_id: category_id ?? current.rows[0].category_id,
         is_active:
           typeof is_active === "boolean"
@@ -244,7 +266,7 @@ class ProductController {
                 UPDATE products 
                 SET name = $1, description = $2, sku = $3, cost_price = $4, selling_price = $5, 
                     current_stock = $6, min_stock_level = $7, max_stock_level = $8, 
-                    supplier_name = $9, supplier_contact = $10, category_id = $11, is_active = $12, updated_at = NOW() 
+            supplier_name = $9, supplier_contact = NULL, supplier_contact_enc = $10, category_id = $11, is_active = $12, updated_at = NOW() 
                 WHERE id = $13 RETURNING *
             `,
         [
@@ -257,7 +279,7 @@ class ProductController {
           updated.min_stock_level,
           updated.max_stock_level,
           updated.supplier_name,
-          updated.supplier_contact,
+          updated.supplier_contact_enc,
           updated.category_id,
           updated.is_active,
           id,
@@ -292,7 +314,7 @@ class ProductController {
         }
       }
 
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
       console.error("Erro ao atualizar produto:", err);
       res.status(500).json({ message: "Erro ao atualizar produto", ...buildErrorResponse(err) });
@@ -324,7 +346,7 @@ class ProductController {
       const { rows } = await db.query(
         `
                 SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
                        p.last_restocked, p.is_active, p.created_at, p.updated_at, 
                        c.name as category_name
                 FROM products p
@@ -334,7 +356,7 @@ class ProductController {
             `,
         [categoryId]
       );
-      res.json(rows);
+      res.json(decryptProductRows(rows));
     } catch (err) {
       console.error("Erro ao buscar produtos por categoria:", err);
       res.status(500).json({ message: "Erro ao buscar produtos por categoria", ...buildErrorResponse(err) });
@@ -349,7 +371,7 @@ class ProductController {
       const { rows } = await db.query(
         "SELECT * FROM products WHERE current_stock <= min_stock_level ORDER BY current_stock ASC"
       );
-      res.json(rows);
+      res.json(decryptProductRows(rows));
     } catch (err) {
       console.error("Erro ao buscar produtos com baixo estoque:", err);
       res.status(500).json({ message: "Erro ao buscar produtos com baixo estoque", ...buildErrorResponse(err) });
@@ -392,7 +414,7 @@ class ProductController {
         console.error('Erro ao enviar notificação de reposição:', notificationError);
       }
       
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
       console.error("Erro ao repor estoque:", err);
       res.status(500).json({ message: "Erro ao repor estoque", ...buildErrorResponse(err) });
