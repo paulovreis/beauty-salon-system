@@ -62,11 +62,21 @@ services:
       DB_NAME: ${DB_NAME:-beauty_salon}
       JWT_SECRET: ${JWT_SECRET:-supersecretkey}
       INIT_DB: ${INIT_DB:-true}
+
+      # Field-level encryption (at-rest)
+      DATA_ENCRYPTION_ACTIVE_KID: ${DATA_ENCRYPTION_ACTIVE_KID}
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1}
+      DATA_ENCRYPTION_HMAC_KEY_V1: ${DATA_ENCRYPTION_HMAC_KEY_V1}
+
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       NOME_SALAO: ${NOME_SALAO:-Fada Madrinha}
+
+      # Evolution API (WhatsApp notifications)
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+
       CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       FRONTEND_URL: "${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}"
     ports:
@@ -114,6 +124,12 @@ services:
       DB_NAME: ${DB_NAME:-beauty_salon}
       JWT_SECRET: ${JWT_SECRET:-supersecretkey}
       INIT_DB: "true"
+
+      # Field-level encryption (at-rest)
+      DATA_ENCRYPTION_ACTIVE_KID: ${DATA_ENCRYPTION_ACTIVE_KID}
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1}
+      DATA_ENCRYPTION_HMAC_KEY_V1: ${DATA_ENCRYPTION_HMAC_KEY_V1}
+
       CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       PORT: 5000
       TEST_API_URL: http://localhost:5000
