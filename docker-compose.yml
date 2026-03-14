@@ -117,6 +117,7 @@ services:
   api-tests:
     build: ./api
     environment:
+      NODE_ENV: test
       DB_USER: ${DB_USER:-postgres}
       DB_PASS: ${DB_PASS:-postgres}
       DB_HOST: db-test

@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import hpp from 'hpp';
 import pool from './db/postgre.js';
 import authRoutes from './routes/authRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
@@ -16,6 +19,7 @@ import clientRoutes from './routes/clientRoutes.js';
 import expenseRoutes from './routes/expenseRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import schedulerService from './services/schedulerService.js';
+import sanitizeRequest from './middlewares/sanitizeRequest.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
@@ -27,6 +31,45 @@ if (fs.existsSync(rootEnvPath)) {
 }
 
 const app = express();
+
+app.disable('x-powered-by');
+
+if (String(process.env.TRUST_PROXY || '').toLowerCase() === 'true') {
+  // Only enable when running behind a trusted reverse proxy/load balancer.
+  app.set('trust proxy', 1);
+}
+
+app.use(helmet({
+  // This is a JSON API; CSP is usually enforced at the frontend.
+  contentSecurityPolicy: false,
+}));
+
+app.use(hpp());
+
+const jsonBodyLimit = process.env.JSON_BODY_LIMIT || '100kb';
+app.use(express.json({ limit: jsonBodyLimit }));
+app.use(express.urlencoded({ extended: false, limit: jsonBodyLimit }));
+
+app.use(sanitizeRequest());
+
+const enableRateLimit =
+  String(process.env.RATE_LIMIT_ENABLED || '').toLowerCase() !== 'false' &&
+  process.env.NODE_ENV !== 'test';
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number.parseInt(process.env.RATE_LIMIT_MAX || '300', 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || '20', 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+});
 
 function parseCorsOrigin(corsOriginEnv) {
   const value = (corsOriginEnv || '*').trim();
@@ -48,13 +91,15 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
+if (enableRateLimit) {
+  app.use(generalLimiter);
+}
 
 // Rotas
 app.use('/auth', (req, res, next) => {
   req.pool = pool; // Disponibiliza o pool para os controllers via req.pool
   next();
-}, authRoutes);
+}, enableRateLimit ? authLimiter : (req, _res, next) => next(), authRoutes);
 
 
 app.use('/dashboard', (req, res, next) => {
