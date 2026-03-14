@@ -35,7 +35,8 @@ const app = express();
 
 app.disable('x-powered-by');
 
-if (String(process.env.TRUST_PROXY || '').toLowerCase() === 'true') {
+const trustProxyEnv = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+if (trustProxyEnv === 'true' || trustProxyEnv === '1') {
   // Only enable when running behind a trusted reverse proxy/load balancer.
   app.set('trust proxy', 1);
 }
