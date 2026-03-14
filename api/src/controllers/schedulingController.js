@@ -3,6 +3,7 @@ import pool from "../db/postgre.js";
 import withTransaction from "../db/withTransaction.js";
 import whatsappService from "../services/whatsappNotificationService.js";
 import buildErrorResponse from "../utils/errorResponse.js";
+import { createClientNotification } from '../utils/clientNotifications.js';
 import { decryptString, encryptString, hmacSha256Hex, normalizePhoneBR, normalizeText } from '../utils/fieldCrypto.js';
 
 function decryptPhones(rows) {
@@ -540,6 +541,19 @@ class SchedulingController {
 				console.error('Erro ao enviar notificação de novo agendamento:', notificationError);
 				// Não falha a criação do agendamento se a notificação falhar
 			}
+
+			// Notificação in-app/push para o cliente (best-effort)
+			try {
+				await createClientNotification(db, {
+					clientId: createdAppointment?.client_id,
+					type: 'appointment_created',
+					title: 'Agendamento criado',
+					body: 'Seu agendamento foi criado pela equipe.',
+					data: { appointment_id: createdAppointment?.id },
+				});
+			} catch (notifErr) {
+				console.warn('Scheduling create client notification warning:', notifErr?.message || notifErr);
+			}
 			
 			res.status(201).json(decryptPhones(createdAppointment));
 		} catch (err) {
@@ -773,6 +787,44 @@ class SchedulingController {
 							const clientMessage = whatsappService.createClientAppointmentUpdate(appointment, changes);
 							await whatsappService.sendMessage(appointment.client_phone, clientMessage);
 						}
+
+						// Notificação in-app/push para o cliente (best-effort)
+						try {
+							const statusChanged = changes.some((c) => c.field === 'Status');
+							const normalizedStatus = String(appointment.status || '').toLowerCase();
+							let type = 'appointment_updated';
+							let title = 'Agendamento atualizado';
+							let body = 'Seu agendamento foi atualizado pela equipe.';
+
+							if (statusChanged && ['confirmed', 'completed', 'canceled'].includes(normalizedStatus)) {
+								if (normalizedStatus === 'confirmed') {
+									type = 'appointment_confirmed';
+									title = 'Agendamento confirmado';
+									body = 'Seu agendamento foi confirmado.';
+								} else if (normalizedStatus === 'completed') {
+									type = 'appointment_completed';
+									title = 'Agendamento concluído';
+									body = 'Seu atendimento foi marcado como concluído.';
+								} else if (normalizedStatus === 'canceled') {
+									type = 'appointment_canceled';
+									title = 'Agendamento cancelado';
+									body = 'Seu agendamento foi cancelado pela equipe.';
+								}
+							}
+
+							await createClientNotification(db, {
+								clientId: appointment.client_id,
+								type,
+								title,
+								body,
+								data: {
+									appointment_id: appointment.id,
+									changes,
+								},
+							});
+						} catch (notifErr) {
+							console.warn('Scheduling update client notification warning:', notifErr?.message || notifErr);
+						}
 					}
 				}
 			} catch (notificationError) {
@@ -866,6 +918,19 @@ class SchedulingController {
 						'Agendamento cancelado pelo sistema'
 					);
 					await whatsappService.sendMessage(appointmentData.client_phone, clientMessage);
+				}
+
+				// Notificação in-app/push para o cliente (best-effort)
+				try {
+					await createClientNotification(db, {
+						clientId: appointmentData?.client_id,
+						type: 'appointment_canceled',
+						title: 'Agendamento cancelado',
+						body: 'Seu agendamento foi cancelado pela equipe.',
+						data: { appointment_id: Number(id) || id, source: 'staff_delete' },
+					});
+				} catch (notifErr) {
+					console.warn('Scheduling delete client notification warning:', notifErr?.message || notifErr);
 				}
 			} catch (notificationError) {
 				console.error('Erro ao enviar notificação de cancelamento:', notificationError);
@@ -984,6 +1049,7 @@ class SchedulingController {
 		// Permite detalhes de pagamento ao completar
 		const { payment_method, amount, notes } = req.body || {};
 		try {
+			let targetClientId;
 			const updated = await withTransaction(db, async (client) => {
 				// Busca o agendamento atual
 				const current = await client.query(`SELECT id, client_id, employee_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
@@ -993,6 +1059,7 @@ class SchedulingController {
 					throw e;
 				}
 				const appt = current.rows[0];
+				targetClientId = appt.client_id;
 				// Atualiza status
 				const updated = await client.query(`UPDATE appointments SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,[id,newStatus]);
 				// Ajusta métricas básicas de cliente quando completa ou cancela
@@ -1029,6 +1096,37 @@ class SchedulingController {
 			} catch (notificationError) {
 				console.error('Erro ao enviar notificação de mudança de status:', notificationError);
 				// Não falha a atualização se a notificação falhar
+			}
+
+			// Notificação in-app/push para o cliente (best-effort)
+			try {
+				const normalizedStatus = String(newStatus || '').toLowerCase();
+				let type = 'appointment_status_updated';
+				let title = 'Status do agendamento';
+				let body = `Status atualizado para ${normalizedStatus || 'atualizado'}.`;
+				if (normalizedStatus === 'confirmed') {
+					type = 'appointment_confirmed';
+					title = 'Agendamento confirmado';
+					body = 'Seu agendamento foi confirmado.';
+				} else if (normalizedStatus === 'completed') {
+					type = 'appointment_completed';
+					title = 'Agendamento concluído';
+					body = 'Seu atendimento foi marcado como concluído.';
+				} else if (normalizedStatus === 'canceled') {
+					type = 'appointment_canceled';
+					title = 'Agendamento cancelado';
+					body = 'Seu agendamento foi cancelado pela equipe.';
+				}
+
+				await createClientNotification(db, {
+					clientId: targetClientId,
+					type,
+					title,
+					body,
+					data: { appointment_id: Number(id) || id, status: normalizedStatus },
+				});
+			} catch (notifErr) {
+				console.warn('Scheduling transitionStatus client notification warning:', notifErr?.message || notifErr);
 			}
 			
 			res.json(updated.rows[0]);

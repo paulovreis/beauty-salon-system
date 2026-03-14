@@ -66,6 +66,7 @@ export const createTables = async () => {
       );`,
       `CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
         phone VARCHAR(20),
@@ -87,6 +88,7 @@ export const createTables = async () => {
         total_spent DECIMAL(10,2) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
       );`,
       `CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
@@ -303,6 +305,7 @@ export const createTables = async () => {
       await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone_hash CHAR(64);`);
 
       // clients
+      await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id INTEGER;`);
       await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enc TEXT;`);
       await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_hash CHAR(64);`);
       await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone_enc TEXT;`);
@@ -436,6 +439,7 @@ export const createTables = async () => {
     // Índices para performance de consultas de agendamentos e slots
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_employee_date_time ON appointments(employee_id, appointment_date, appointment_time);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_date_time ON appointments(appointment_date, appointment_time);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_client_date_time ON appointments(client_id, appointment_date DESC, appointment_time DESC);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_time_slots_employee_date_time ON time_slots(employee_id, date, start_time);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_status_date ON appointments(status, appointment_date);`);
@@ -470,8 +474,27 @@ export const createTables = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_employees_phone_hash ON employees(phone_hash) WHERE phone_hash IS NOT NULL;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_email_hash ON clients(email_hash) WHERE email_hash IS NOT NULL;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_phone_hash ON clients(phone_hash) WHERE phone_hash IS NOT NULL;`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_clients_user_id ON clients(user_id) WHERE user_id IS NOT NULL;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_clients_birth_month_day ON clients(birth_month, birth_day) WHERE birth_month IS NOT NULL AND birth_day IS NOT NULL;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_reset_token_hash ON users(reset_token_hash) WHERE reset_token_hash IS NOT NULL;`);
+
+    // FK for clients.user_id (if not present)
+    try {
+      await pool.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'clients_user_id_fkey'
+          ) THEN
+            ALTER TABLE clients ADD CONSTRAINT clients_user_id_fkey 
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
+      console.log('Aviso ao adicionar FK clients_user_id_fkey:', err.message);
+    }
 
     // Pagamentos de agendamentos (serviços)
     await pool.query(`
@@ -540,6 +563,43 @@ export const createTables = async () => {
 
     // Criar índice para configurações de notificações
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_employee_notifications_employee ON employee_notifications(employee_id);`);
+
+    // Mobile: in-app notifications for clients
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_notifications (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        type VARCHAR(50) NOT NULL DEFAULT 'generic',
+        title VARCHAR(255),
+        body TEXT,
+        data JSONB,
+        is_read BOOLEAN NOT NULL DEFAULT false,
+        read_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_notifications_client_created ON client_notifications(client_id, created_at DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_notifications_client_unread_created ON client_notifications(client_id, is_read, created_at DESC);`);
+
+    // Mobile: device tokens for push notifications (FCM)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_devices (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        platform VARCHAR(20) NOT NULL,
+        token_enc TEXT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(token_hash)
+      )
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_devices_client_enabled ON client_devices(client_id, enabled) WHERE enabled = TRUE;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_devices_last_seen ON client_devices(last_seen DESC);`);
 
     console.log('Tabelas, índices e dados iniciais criados (se não existiam).');
   } catch (err) {

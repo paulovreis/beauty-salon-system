@@ -18,6 +18,7 @@ import schedulingRoutes from './routes/schedulingRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import expenseRoutes from './routes/expenseRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import mobileRoutes from './routes/mobileRoutes.js';
 import schedulerService from './services/schedulerService.js';
 import sanitizeRequest from './middlewares/sanitizeRequest.js';
 const { createTables } = await import('./db/initDb.js');
@@ -145,6 +146,11 @@ app.use('/notifications', (req, res, next) => {
   req.pool = pool;
   next();
 }, notificationRoutes);
+
+app.use('/mobile', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, mobileRoutes);
 
 const PORT = process.env.PORT || 5000;
 
