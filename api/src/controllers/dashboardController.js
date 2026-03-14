@@ -1,6 +1,7 @@
 import pool from '../db/postgre.js';
 import buildErrorResponse from '../utils/errorResponse.js';
 import { decryptString } from '../utils/fieldCrypto.js';
+import QRCode from 'qrcode';
 
 function decryptClientPhone(rows) {
   if (!rows) return rows;
@@ -18,6 +19,48 @@ function decryptClientPhone(rows) {
 }
 
 class DashboardController {
+  async getMobileConnectionQr(req, res) {
+    try {
+      const slug = (process.env.SALON_SLUG || '').trim() || null;
+      const name = (process.env.NOME_SALAO || '').trim() || null;
+      const city = (process.env.SALON_CITY || '').trim() || null;
+      const logoUrl = (process.env.SALON_LOGO_URL || '').trim() || null;
+
+      const rawOrigin = (process.env.API_PUBLIC_ORIGIN || '').trim() || `${req.protocol}://${req.get('host')}`;
+      const apiPublicOrigin = rawOrigin.replace(/\/+$/g, '');
+
+      // Payload versionado para o app conseguir evoluir sem quebrar QR antigos.
+      // Mantém simples: o app pode usar payload.baseUrl como base para chamar /mobile/public/meta.
+      const payloadObj = {
+        v: 1,
+        baseUrl: apiPublicOrigin,
+        slug,
+      };
+
+      const payload = JSON.stringify(payloadObj);
+      const svg = await QRCode.toString(payload, {
+        type: 'svg',
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 256,
+      });
+
+      res.set('Cache-Control', 'no-store');
+      return res.json({
+        baseUrl: apiPublicOrigin,
+        meta: { slug, name, city, logoUrl },
+        payload,
+        qr: { format: 'svg', svg },
+      });
+    } catch (err) {
+      console.error('Erro ao gerar QR de conexão do app:', err);
+      return res.status(500).json({
+        message: 'Erro ao gerar QR de conexão do app',
+        ...buildErrorResponse(err),
+      });
+    }
+  }
+
   async getStats(req, res) {
     const db = req.pool || pool;
     try {
