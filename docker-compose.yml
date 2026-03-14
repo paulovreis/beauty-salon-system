@@ -77,6 +77,9 @@ services:
 
       # Evolution API (WhatsApp notifications)
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-http://evolution-api:8080}
+      EVOLUTION_PUBLIC_ORIGIN: ${EVOLUTION_PUBLIC_ORIGIN:-}
+      EVOLUTION_REQUEST_ORIGIN: ${EVOLUTION_REQUEST_ORIGIN:-}
 
       # Public URL (used by /mobile/public/meta when configured)
       API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:-}
@@ -149,6 +152,11 @@ services:
       DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1}
       DATA_ENCRYPTION_HMAC_KEY_V1: ${DATA_ENCRYPTION_HMAC_KEY_V1}
 
+      # Evolution API (not used in most tests, but keeps env consistent)
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-http://evolution-api:8080}
+      EVOLUTION_PUBLIC_ORIGIN: ${EVOLUTION_PUBLIC_ORIGIN:-}
+      EVOLUTION_REQUEST_ORIGIN: ${EVOLUTION_REQUEST_ORIGIN:-}
+
       CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       PORT: 5000
       TEST_API_URL: http://localhost:5000
@@ -196,7 +204,9 @@ services:
     networks:
       - beauty-salon-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # curl is not available in this image and /health is not a valid route.
+      # Also, Evolution API enforces CORS; without Origin it may return 500.
+      test: ["CMD-SHELL", "wget -q --header=\"Origin: ${SERVER_URL}\" -O - http://localhost:8080/ > /dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 3

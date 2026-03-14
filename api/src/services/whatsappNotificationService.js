@@ -55,13 +55,27 @@ function decryptPhoneFields(rows) {
 
 class WhatsAppNotificationService {
   constructor() {
-    this.evolutionApiUrl = 'http://evolution-api:8080';
+    this.evolutionApiUrl = process.env.EVOLUTION_API_URL || 'http://evolution-api:8080';
     this.apiKey = process.env.EVOLUTION_API_KEY;
     this.defaultInstance = 'main';
+
+    // Evolution API aplica CORS mesmo para chamadas server-to-server.
+    // Sem header Origin ela pode responder 500 "Not allowed by CORS".
+    this.requestOrigin =
+      process.env.EVOLUTION_REQUEST_ORIGIN ||
+      process.env.EVOLUTION_PUBLIC_ORIGIN ||
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_PUBLIC_ORIGIN ||
+      process.env.API_PUBLIC_ORIGIN ||
+      undefined;
 
     if (!this.apiKey) {
       console.warn('EVOLUTION_API_KEY não configurada; notificações WhatsApp podem falhar.');
     }
+  }
+
+  async sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Método para fazer requisições à Evolution API
@@ -72,31 +86,76 @@ class WhatsAppNotificationService {
       throw new Error('EVOLUTION_API_KEY não configurada');
     }
 
-    const config = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': this.apiKey
-      }
+    const headers = {
+      apikey: this.apiKey,
+      Accept: 'application/json',
     };
+
+    // Só define Content-Type quando há body.
+    if (data && method !== 'GET') {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    if (this.requestOrigin) {
+      headers.Origin = this.requestOrigin;
+    }
+
+    const config = { method, headers };
 
     if (data && method !== 'GET') {
       config.body = JSON.stringify(data);
     }
 
-    try {
-      const response = await fetch(url, config);
-      const responseData = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(responseData.message || `HTTP ${response.status}`);
+    const maxAttempts = Number.parseInt(process.env.EVOLUTION_API_RETRY_ATTEMPTS || '3', 10);
+    const baseDelayMs = Number.parseInt(process.env.EVOLUTION_API_RETRY_DELAY_MS || '400', 10);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(url, config);
+        const text = await response.text();
+
+        let responseData;
+        try {
+          responseData = text ? JSON.parse(text) : null;
+        } catch {
+          responseData = { message: text };
+        }
+
+        if (!response.ok) {
+          const msg = responseData?.message || responseData?.error || `HTTP ${response.status}`;
+          const err = new Error(String(msg));
+          err.status = response.status;
+          err.response = responseData;
+          throw err;
+        }
+
+        return responseData;
+      } catch (error) {
+        const code = error?.cause?.code || error?.code;
+        const isNetworkError =
+          code === 'ECONNREFUSED' ||
+          code === 'ECONNRESET' ||
+          code === 'ENOTFOUND' ||
+          code === 'ETIMEDOUT' ||
+          /fetch failed/i.test(String(error?.message));
+
+        const shouldRetry = isNetworkError && attempt < maxAttempts;
+        console.error('Evolution API Error:', {
+          url,
+          method,
+          attempt,
+          maxAttempts,
+          code,
+          message: error?.message,
+          status: error?.status,
+        });
+
+        if (!shouldRetry) throw error;
+        await this.sleep(baseDelayMs * attempt);
       }
-      
-      return responseData;
-    } catch (error) {
-      console.error('Evolution API Error:', error);
-      throw error;
     }
+
+    throw new Error('Evolution API request failed after retries');
   }
 
   // Obter instância ativa
