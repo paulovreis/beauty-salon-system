@@ -5,6 +5,7 @@ import whatsappService from "../services/whatsappNotificationService.js";
 import buildErrorResponse from "../utils/errorResponse.js";
 import { createClientNotification } from '../utils/clientNotifications.js';
 import { decryptString, encryptString, hmacSha256Hex, normalizePhoneBR, normalizeText } from '../utils/fieldCrypto.js';
+import { toDateOnlyString } from '../utils/dateOnly.js';
 
 function decryptPhones(rows) {
 	if (!rows) return rows;
@@ -12,6 +13,9 @@ function decryptPhones(rows) {
 	const mapped = arr.map((r) => {
 		if (!r || typeof r !== 'object') return r;
 		const out = { ...r };
+		if ('appointment_date' in out) {
+			out.appointment_date = toDateOnlyString(out.appointment_date);
+		}
 		if ('notes_enc' in out) {
 			out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
 			delete out.notes_enc;

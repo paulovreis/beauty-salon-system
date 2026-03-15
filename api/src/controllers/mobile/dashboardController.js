@@ -1,12 +1,16 @@
 import pool from '../../db/postgre.js';
 import buildErrorResponse from '../../utils/errorResponse.js';
 import { decryptString } from '../../utils/fieldCrypto.js';
+import { toDateOnlyString } from '../../utils/dateOnly.js';
 
 const getPool = (req) => req.pool || pool;
 
 function mapAppointmentRow(row) {
   if (!row) return row;
   const out = { ...row };
+  if ('appointment_date' in out) {
+    out.appointment_date = toDateOnlyString(out.appointment_date);
+  }
   if ('notes_enc' in out) {
     out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
     delete out.notes_enc;

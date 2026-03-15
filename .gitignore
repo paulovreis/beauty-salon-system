@@ -38,3 +38,5 @@ coverage/
 *.swp
 *.bak
 *.tmp
+
+MOBILE_API.md

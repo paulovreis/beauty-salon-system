@@ -3,6 +3,7 @@ import withTransaction from '../../db/withTransaction.js';
 import buildErrorResponse from '../../utils/errorResponse.js';
 import { decryptString, encryptString, normalizeText } from '../../utils/fieldCrypto.js';
 import { createClientNotification } from '../../utils/clientNotifications.js';
+import { toDateOnlyString } from '../../utils/dateOnly.js';
 
 const getPool = (req) => req.pool || pool;
 
@@ -20,6 +21,9 @@ function parsePagination(req, { defaultLimit = 20, maxLimit = 100 } = {}) {
 function mapAppointmentRow(row) {
   if (!row) return row;
   const out = { ...row };
+  if ('appointment_date' in out) {
+    out.appointment_date = toDateOnlyString(out.appointment_date);
+  }
   if ('notes_enc' in out) {
     out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
     delete out.notes_enc;
