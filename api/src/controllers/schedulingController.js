@@ -33,6 +33,12 @@ function decryptPhones(rows) {
 	return Array.isArray(rows) ? mapped : mapped[0];
 }
 
+// Método auxiliar para converter horário em minutos
+const timeToMinutes = (timeStr) => {
+	const [hours, minutes] = timeStr.split(':').map(Number);
+	return hours * 60 + minutes;
+};
+
 class SchedulingController {
 	constructor() {}
 	// Estrutura dos agendamentos:
@@ -995,11 +1001,11 @@ class SchedulingController {
 					const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 					
 					// Calcular se o serviço cabe neste slot
-					const slotStartMinutes = this.timeToMinutes(timeStr);
+					const slotStartMinutes = timeToMinutes(timeStr);
 					const serviceEndMinutes = slotStartMinutes + serviceDuration;
 					
 					// Verificar se o serviço se estende além do horário de funcionamento (18:00)
-					if (serviceEndMinutes > this.timeToMinutes('18:00')) {
+					if (serviceEndMinutes > timeToMinutes('18:00')) {
 						continue; // Não adicionar este slot se o serviço não cabe
 					}
 					
@@ -1007,7 +1013,7 @@ class SchedulingController {
 					const hasConflict = existingAppointments.some(apt => {
 						if (!apt.appointment_time) return false;
 						
-						const aptStartMinutes = this.timeToMinutes(apt.appointment_time.slice(0, 5));
+						const aptStartMinutes = timeToMinutes(apt.appointment_time.slice(0, 5));
 						const aptEndMinutes = aptStartMinutes + (apt.duration_minutes || 30);
 						
 						// Verifica sobreposição entre o novo serviço e o agendamento existente
@@ -1039,12 +1045,6 @@ class SchedulingController {
 				...buildErrorResponse(err),
 			});
 		}
-	}
-
-	// Método auxiliar para converter horário em minutos
-	timeToMinutes(timeStr) {
-		const [hours, minutes] = timeStr.split(':').map(Number);
-		return hours * 60 + minutes;
 	}
 
 	async transitionStatus(req,res,newStatus){
