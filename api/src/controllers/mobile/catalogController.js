@@ -32,12 +32,25 @@ const MobileCatalogController = {
   async listEmployees(req, res) {
     const db = getPool(req);
     try {
-      const { rows } = await db.query(
-        `SELECT id, name
-         FROM employees
-         WHERE status = 'active'
-         ORDER BY name`
-      );
+      const serviceIdRaw = req.query.service_id;
+      const serviceId = serviceIdRaw ? Number.parseInt(serviceIdRaw, 10) : null;
+
+      let rows;
+      if (serviceId && Number.isFinite(serviceId)) {
+        ({ rows } = await db.query(
+          `SELECT DISTINCT e.id, e.name
+           FROM employees e
+           JOIN employee_specialties es ON es.employee_id = e.id
+           WHERE e.status = 'active' AND es.service_id = $1
+           ORDER BY e.name`,
+          [serviceId]
+        ));
+      } else {
+        ({ rows } = await db.query(
+          `SELECT id, name FROM employees WHERE status = 'active' ORDER BY name`
+        ));
+      }
+
       return res.json({ employees: rows });
     } catch (err) {
       console.error('Mobile listEmployees error:', err);
@@ -57,7 +70,7 @@ const MobileCatalogController = {
         return res.status(400).json({ message: 'employeeId e date são obrigatórios' });
       }
 
-      let durationMinutes = null;
+      let durationMinutes = 30;
       if (serviceIdRaw) {
         if (!Number.isFinite(serviceId)) {
           return res.status(400).json({ message: 'service_id inválido' });
@@ -72,40 +85,42 @@ const MobileCatalogController = {
         durationMinutes = serviceRows[0].duration_minutes;
       }
 
-      if (!durationMinutes) {
-        const { rows } = await db.query(
-          `SELECT start_time
-           FROM time_slots
-           WHERE employee_id = $1 AND date = $2 AND is_available = TRUE
-           ORDER BY start_time`,
-          [employeeId, date]
-        );
-        return res.json({ slots: rows.map((r) => r.start_time) });
-      }
-
-      // Filter considering overlaps with existing appointments.
-      const { rows } = await db.query(
-        `SELECT ts.start_time
-         FROM time_slots ts
-         WHERE ts.employee_id = $1
-           AND ts.date = $2
-           AND ts.is_available = TRUE
-           AND NOT EXISTS (
-             SELECT 1
-             FROM appointments a
-             WHERE a.employee_id = ts.employee_id
-               AND a.appointment_date = ts.date
-               AND a.status <> 'canceled'
-               AND NOT (
-                 (a.appointment_time + make_interval(mins => a.duration_minutes)) <= ts.start_time
-                 OR a.appointment_time >= (ts.start_time + make_interval(mins => $3))
-               )
-           )
-         ORDER BY ts.start_time`,
-        [employeeId, date, durationMinutes]
+      const { rows: existingAppointments } = await db.query(
+        `SELECT appointment_time, duration_minutes
+         FROM appointments
+         WHERE employee_id = $1 AND appointment_date = $2 AND status <> 'canceled'`,
+        [employeeId, date]
       );
 
-      return res.json({ slots: rows.map((r) => r.start_time) });
+      const timeToMinutes = (t) => {
+        const [h, m] = String(t).slice(0, 5).split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const END_OF_DAY = 18 * 60;
+      const slots = [];
+
+      for (let h = 8; h < 18; h++) {
+        for (let m = 0; m < 60; m += 30) {
+          const slotStart = h * 60 + m;
+          const slotEnd = slotStart + durationMinutes;
+
+          if (slotEnd > END_OF_DAY) continue;
+
+          const hasConflict = existingAppointments.some((apt) => {
+            if (!apt.appointment_time) return false;
+            const aptStart = timeToMinutes(apt.appointment_time);
+            const aptEnd = aptStart + (apt.duration_minutes || 30);
+            return !(slotEnd <= aptStart || slotStart >= aptEnd);
+          });
+
+          if (!hasConflict) {
+            slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+          }
+        }
+      }
+
+      return res.json({ slots });
     } catch (err) {
       console.error('Mobile listAvailableSlots error:', err);
       return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(err) });
