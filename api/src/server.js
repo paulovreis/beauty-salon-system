@@ -60,14 +60,14 @@ const enableRateLimit =
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: Number.parseInt(process.env.RATE_LIMIT_MAX || '300', 10),
+  limit: Number.parseInt(process.env.RATE_LIMIT_MAX || '30000', 10),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || '20', 10),
+  limit: Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || '2000', 10),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: true,
