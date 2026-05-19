@@ -4,6 +4,7 @@ import authenticateJWT from "../middlewares/authenticateJWT.js";
 import roleMiddleware from "../middlewares/roleMiddleware.js";
 import paginationMiddleware from "../middlewares/paginationMiddleware.js";
 import SchedulingController from "../controllers/schedulingController.js";
+import AppointmentPixPaymentController from "../controllers/appointmentPixPaymentController.js";
 import {
 	validateCreateScheduling,
 	validateGetAllSchedulings,
@@ -134,6 +135,39 @@ router.post(
 	authenticateJWT,
 	roleMiddleware(["owner","manager","employee"]),
 	(req,res)=> SchedulingController.transitionStatus(req,res,'canceled')
+);
+
+// PIX payments (Mercado Pago)
+router.get(
+	'/:id/payments/pix/latest',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.getLatestPix(req, res)
+);
+
+router.post(
+	'/:id/payments/pix',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.createPix(req, res)
+);
+
+router.post(
+	'/:id/payments/pix/resend',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.resendPix(req, res)
+);
+
+router.post(
+	'/:id/payments/approve',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.manualApprove(req, res)
 );
 
 // generate time slots for range

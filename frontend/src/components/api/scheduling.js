@@ -1,6 +1,10 @@
 import { axiosWithAuth } from './axiosWithAuth';
 
 export const SchedulingApi = {
+  async getById(id) {
+    const res = await axiosWithAuth(`/scheduling/${id}`);
+    return res.data;
+  },
   async getByDate(date) {
     // date: YYYY-MM-DD
     const res = await axiosWithAuth(`/scheduling/date/${date}`);
@@ -54,6 +58,36 @@ export const SchedulingApi = {
     const res = await axiosWithAuth(url);
     return res.data;
   }
+};
+
+export const MercadoPagoApi = {
+  async getStatus() {
+    const res = await axiosWithAuth('/mercadopago/status');
+    return res.data;
+  },
+  async getConnectUrl() {
+    const res = await axiosWithAuth('/mercadopago/connect-url');
+    return res.data;
+  },
+};
+
+export const PixPaymentsApi = {
+  async getLatest(appointmentId) {
+    const res = await axiosWithAuth(`/scheduling/${appointmentId}/payments/pix/latest`);
+    return res.data;
+  },
+  async create(appointmentId) {
+    const res = await axiosWithAuth(`/scheduling/${appointmentId}/payments/pix`, { method: 'post' });
+    return res.data;
+  },
+  async resend(appointmentId) {
+    const res = await axiosWithAuth(`/scheduling/${appointmentId}/payments/pix/resend`, { method: 'post' });
+    return res.data;
+  },
+  async approveManual(appointmentId) {
+    const res = await axiosWithAuth(`/scheduling/${appointmentId}/payments/approve`, { method: 'post' });
+    return res.data;
+  },
 };
 
 export const ClientsApi = {

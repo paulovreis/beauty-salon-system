@@ -18,7 +18,7 @@ import { Textarea } from "./ui/textarea"
 import { Avatar, AvatarFallback, AvatarInitials } from "./ui/avatar"
 import { Plus, Clock, User, CalendarIcon, Edit, Trash2, Phone, ChevronDown, Check, XCircle } from "lucide-react"
 import { axiosWithAuth } from "./api/axiosWithAuth"
-import { SchedulingApi, ClientsApi } from "./api/scheduling"
+import { SchedulingApi, ClientsApi, MercadoPagoApi, PixPaymentsApi } from "./api/scheduling"
 import { useAlert } from "../hooks/useAlert";
 import { AlertDisplay } from "./AlertDisplay";
 
@@ -62,6 +62,14 @@ export default function Scheduling() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [paymentTarget, setPaymentTarget] = useState(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')
+
+  // Mercado Pago / PIX
+  const [mpConnected, setMpConnected] = useState(false)
+  const [mpLoading, setMpLoading] = useState(false)
+  const [pixDialogOpen, setPixDialogOpen] = useState(false)
+  const [pixTarget, setPixTarget] = useState(null)
+  const [pixLoading, setPixLoading] = useState(false)
+  const [pixData, setPixData] = useState(null)
   const paymentMethods = [
     { value: 'cash', label: 'Dinheiro' },
     { value: 'credit', label: 'Crédito' },
@@ -132,6 +140,8 @@ export default function Scheduling() {
           duration: a.duration_minutes,
           price: Number(a.price || 0),
           status: a.status,
+          paymentStatus: a.payment_status,
+          paymentProvider: a.payment_provider,
           notes: a.notes || '',
           commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
         }))
@@ -169,6 +179,21 @@ export default function Scheduling() {
   useEffect(() => {
     loadNextFive()
     loadUpcoming(true)
+  }, [])
+
+  // Load Mercado Pago connection status
+  useEffect(() => {
+    (async () => {
+      try {
+        setMpLoading(true)
+        const st = await MercadoPagoApi.getStatus()
+        setMpConnected(!!st?.connected)
+      } catch {
+        setMpConnected(false)
+      } finally {
+        setMpLoading(false)
+      }
+    })()
   }, [])
 
   // Outside click for status dropdown & client dropdown
@@ -232,6 +257,123 @@ export default function Scheduling() {
         return 'destructive'
       default:
         return 'default'
+    }
+  }
+
+  const handleConnectMercadoPago = async () => {
+    try {
+      setMpLoading(true)
+      const data = await MercadoPagoApi.getConnectUrl()
+      if (!data?.url) throw new Error('URL de conexão indisponível')
+      window.location.href = data.url
+    } catch (e) {
+      showError(e)
+    } finally {
+      setMpLoading(false)
+    }
+  }
+
+  const paymentLabel = (val) => {
+    const s = String(val || 'unpaid').toLowerCase()
+    if (s === 'paid') return 'pago'
+    if (s === 'pending') return 'pendente'
+    if (s === 'expired') return 'expirado'
+    if (s === 'failed') return 'falhou'
+    return 'não pago'
+  }
+
+  const paymentBadgeVariant = (val) => {
+    const s = String(val || 'unpaid').toLowerCase()
+    if (s === 'paid') return 'default'
+    if (s === 'pending') return 'secondary'
+    if (s === 'failed') return 'destructive'
+    if (s === 'expired') return 'outline'
+    return 'outline'
+  }
+
+  const updateLocalPaymentStatus = (appointmentId, status, provider=null) => {
+    setAppointments(prev => prev.map(a => a.id === appointmentId ? { ...a, paymentStatus: status, paymentProvider: provider ?? a.paymentProvider } : a))
+    setNextFive(prev => prev.map(a => a.id === appointmentId ? { ...a, paymentStatus: status, paymentProvider: provider ?? a.paymentProvider } : a))
+    setUpcoming(prev => prev.map(a => a.id === appointmentId ? { ...a, paymentStatus: status, paymentProvider: provider ?? a.paymentProvider } : a))
+  }
+
+  const openPixDialog = async (appointment) => {
+    setPixTarget(appointment)
+    setPixDialogOpen(true)
+    setPixData(null)
+    try {
+      setPixLoading(true)
+      const latest = await PixPaymentsApi.getLatest(appointment.id)
+      setPixData(latest)
+    } catch (e) {
+      showError(e)
+    } finally {
+      setPixLoading(false)
+    }
+  }
+
+  const handleGeneratePix = async () => {
+    if (!pixTarget) return
+    try {
+      setPixLoading(true)
+      const created = await PixPaymentsApi.create(pixTarget.id)
+      setPixData({
+        appointment_id: created.appointmentId,
+        payment_status: created.payment_status,
+        payment_provider: 'mercadopago',
+        mp_payment_id: created.pix?.mp_payment_id,
+        mp_payment_status: created.pix?.mp_status,
+        qr_code: created.pix?.qr_code,
+        qr_code_base64: created.pix?.qr_code_base64,
+        ticket_url: created.pix?.ticket_url,
+        expires_at: created.pix?.expires_at,
+      })
+      updateLocalPaymentStatus(pixTarget.id, created.payment_status, 'mercadopago')
+      showSuccess('PIX gerado com sucesso!')
+    } catch (e) {
+      showError(e)
+    } finally {
+      setPixLoading(false)
+    }
+  }
+
+  const handleResendPix = async () => {
+    if (!pixTarget) return
+    try {
+      setPixLoading(true)
+      const created = await PixPaymentsApi.resend(pixTarget.id)
+      setPixData({
+        appointment_id: created.appointmentId,
+        payment_status: created.payment_status,
+        payment_provider: 'mercadopago',
+        mp_payment_id: created.pix?.mp_payment_id,
+        mp_payment_status: created.pix?.mp_status,
+        qr_code: created.pix?.qr_code,
+        qr_code_base64: created.pix?.qr_code_base64,
+        ticket_url: created.pix?.ticket_url,
+        expires_at: created.pix?.expires_at,
+      })
+      updateLocalPaymentStatus(pixTarget.id, created.payment_status, 'mercadopago')
+      showSuccess('PIX reenviado com sucesso!')
+    } catch (e) {
+      showError(e)
+    } finally {
+      setPixLoading(false)
+    }
+  }
+
+  const handleApproveManual = async () => {
+    if (!pixTarget) return
+    try {
+      setPixLoading(true)
+      const updated = await PixPaymentsApi.approveManual(pixTarget.id)
+      updateLocalPaymentStatus(pixTarget.id, updated.payment_status, updated.payment_provider)
+      setPixData(prev => ({ ...(prev || {}), payment_status: updated.payment_status, payment_provider: updated.payment_provider }))
+      showSuccess('Pagamento aprovado manualmente!')
+    } catch (e) {
+      showError(e)
+    } finally {
+      setPixLoading(false)
     }
   }
 
@@ -301,6 +443,8 @@ export default function Scheduling() {
         duration: a.duration_minutes,
         price: Number(a.price || 0),
         status: a.status,
+        paymentStatus: a.payment_status,
+        paymentProvider: a.payment_provider,
         notes: a.notes || '',
         commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
@@ -410,6 +554,8 @@ export default function Scheduling() {
         duration:a.duration_minutes,
         price:Number(a.price||0),
         status:a.status,
+        paymentStatus: a.payment_status,
+        paymentProvider: a.payment_provider,
         notes:a.notes||'',
         commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
@@ -491,6 +637,8 @@ export default function Scheduling() {
         duration: a.duration_minutes,
         price: Number(a.price || 0),
         status: a.status,
+        paymentStatus: a.payment_status,
+        paymentProvider: a.payment_provider,
         notes: a.notes || '',
         commissionAmount: a.commission_amount != null ? Number(a.commission_amount) : null,
       }))
@@ -521,6 +669,8 @@ export default function Scheduling() {
         duration: a.duration_minutes,
         price: Number(a.price || 0),
         status: a.status,
+        paymentStatus: a.payment_status,
+        paymentProvider: a.payment_provider,
         notes: a.notes || '',
       }))
       setNextFive(mapped)
@@ -538,7 +688,9 @@ export default function Scheduling() {
       const resp = await SchedulingApi.getUpcomingPaginated(_limit,_offset)
       const mapped = (resp.data || []).map(a=>({
         id:a.id, clientName:a.client_name, clientPhone:a.client_phone||'', service:a.service_name, employee:a.employee_name, date:(a.appointment_date||'').slice(0,10),
-        time:a.appointment_time?.slice(0,5), duration:a.duration_minutes, price:Number(a.price||0), status:a.status, notes:a.notes||''
+        time:a.appointment_time?.slice(0,5), duration:a.duration_minutes, price:Number(a.price||0), status:a.status,
+        paymentStatus: a.payment_status, paymentProvider: a.payment_provider,
+        notes:a.notes||''
       }))
       if(reset){
         setUpcoming(mapped)
@@ -595,18 +747,27 @@ export default function Scheduling() {
           <h2 className="text-3xl font-bold">Agendamento de Consultas</h2>
           <p className="text-muted-foreground">Gerencie os agendamentos dos clientes e a agenda dos funcionários</p>
         </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Agendamento
+        <div className="flex items-center gap-2">
+          {mpConnected ? (
+            <Badge variant="outline">Mercado Pago conectado</Badge>
+          ) : (
+            <Button variant="outline" onClick={handleConnectMercadoPago} disabled={mpLoading}>
+              {mpLoading ? 'Conectando...' : 'Conectar Mercado Pago'}
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Agendar Novo Atendimento</DialogTitle>
-              <DialogDescription>Reserve um novo horário para um cliente</DialogDescription>
-            </DialogHeader>
+          )}
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Agendamento
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Agendar Novo Atendimento</DialogTitle>
+                <DialogDescription>Reserve um novo horário para um cliente</DialogDescription>
+              </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -740,8 +901,9 @@ export default function Scheduling() {
                 Agendar Atendimento
               </Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -815,6 +977,14 @@ export default function Scheduling() {
                             </div>
                           )}
                         </div>
+
+                        <Badge variant={paymentBadgeVariant(appointment.paymentStatus)}>
+                          {paymentLabel(appointment.paymentStatus)}
+                        </Badge>
+
+                        <Button variant="outline" size="sm" onClick={() => openPixDialog(appointment)}>
+                          PIX
+                        </Button>
                         <div className="text-sm font-medium w-20 text-right">R${Number(appointment.price || 0).toFixed(2)}</div>
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={() => handleEditAppointment(appointment)}>
@@ -873,6 +1043,13 @@ export default function Scheduling() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={getStatusColor(appointment.status)}>{statusLabel(appointment.status)}</Badge>
+                  <Badge variant={paymentBadgeVariant(appointment.paymentStatus)}>
+                    {paymentLabel(appointment.paymentStatus)}
+                  </Badge>
+
+                  <Button variant="outline" size="sm" onClick={() => openPixDialog(appointment)}>
+                    PIX
+                  </Button>
                   <div className="text-right">
                     <div className="font-medium">R${Number(appointment.price || 0).toFixed(2)}</div>
                   </div>
@@ -969,6 +1146,123 @@ export default function Scheduling() {
           </div>
         </CardContent>
       </Card>
+
+      {/* PIX Dialog */}
+      <Dialog
+        open={pixDialogOpen}
+        onOpenChange={(open) => {
+          setPixDialogOpen(open)
+          if (!open) {
+            setPixTarget(null)
+            setPixData(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pagamento via PIX</DialogTitle>
+            <DialogDescription>Gere e compartilhe o PIX do agendamento.</DialogDescription>
+          </DialogHeader>
+
+          {!pixTarget ? (
+            <p className="text-sm text-muted-foreground">Selecione um agendamento.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{pixTarget.clientName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Agendamento #{pixTarget.id} • R${Number(pixTarget.price || 0).toFixed(2)}
+                  </div>
+                </div>
+                <Badge variant={paymentBadgeVariant(pixData?.payment_status ?? pixTarget.paymentStatus)}>
+                  {paymentLabel(pixData?.payment_status ?? pixTarget.paymentStatus)}
+                </Badge>
+              </div>
+
+              {!mpConnected && (
+                <p className="text-xs text-muted-foreground">
+                  Conecte o Mercado Pago para gerar PIX automático.
+                </p>
+              )}
+
+              {pixLoading ? (
+                <p className="text-sm text-muted-foreground">Carregando...</p>
+              ) : (
+                <>
+                  {pixData?.qr_code_base64 ? (
+                    <div className="flex justify-center">
+                      <img
+                        src={`data:image/png;base64,${pixData.qr_code_base64}`}
+                        alt="QR Code PIX"
+                        className="h-48 w-48"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum PIX gerado ainda.</p>
+                  )}
+
+                  {pixData?.expires_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Expira em: {new Date(pixData.expires_at).toLocaleString('pt-BR')}
+                    </p>
+                  )}
+
+                  {pixData?.qr_code && (
+                    <div className="space-y-2">
+                      <Label>PIX Copia e Cola</Label>
+                      <Textarea readOnly value={pixData.qr_code} rows={4} />
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(pixData.qr_code)
+                              showSuccess('Código PIX copiado!')
+                            } catch (e) {
+                              showError(e)
+                            }
+                          }}
+                        >
+                          Copiar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {pixData?.ticket_url && (
+                    <a
+                      className="text-sm underline"
+                      href={pixData.ticket_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir link do pagamento
+                    </a>
+                  )}
+                </>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setPixDialogOpen(false)}>
+                  Fechar
+                </Button>
+                <Button variant="outline" onClick={handleApproveManual} disabled={pixLoading}>
+                  Aprovar manualmente
+                </Button>
+                <Button
+                  onClick={pixData?.mp_payment_id ? handleResendPix : handleGeneratePix}
+                  disabled={pixLoading || !mpConnected}
+                >
+                  {pixData?.mp_payment_id ? 'Reenviar PIX' : 'Gerar PIX'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={(open) => { if(!open){ setShowDeleteDialog(false); setDeleteTarget(null) } }}>
         <DialogContent className="max-w-sm">

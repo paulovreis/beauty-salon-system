@@ -99,6 +99,10 @@ export const createTables = async () => {
         appointment_time TIME NOT NULL,
         duration_minutes INTEGER NOT NULL,
         status VARCHAR(20) DEFAULT 'scheduled',
+        payment_status VARCHAR(20) DEFAULT 'unpaid',
+        payment_provider VARCHAR(30),
+        payment_approved_by_user_id INTEGER,
+        payment_approved_at TIMESTAMP,
         price DECIMAL(10,2) NOT NULL,
         commission_amount DECIMAL(10,2),
         notes TEXT,
@@ -510,11 +514,83 @@ export const createTables = async () => {
       );
     `);
 
+    // Mercado Pago - contas conectadas (OAuth) por usuário
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS mercadopago_accounts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        mp_user_id VARCHAR(64),
+        access_token_enc TEXT,
+        refresh_token_enc TEXT,
+        token_type VARCHAR(30),
+        scope TEXT,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // PIX - intent/requests por agendamento (não substitui appointment_payments)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointment_pix_payments (
+        id SERIAL PRIMARY KEY,
+        appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+        provider VARCHAR(30) NOT NULL DEFAULT 'mercadopago',
+        seller_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        mp_payment_id VARCHAR(64),
+        mp_payment_status VARCHAR(40),
+        amount DECIMAL(10,2) NOT NULL,
+        currency VARCHAR(10) DEFAULT 'BRL',
+        idempotency_key VARCHAR(80),
+        qr_code TEXT,
+        qr_code_base64 TEXT,
+        ticket_url TEXT,
+        expires_at TIMESTAMP,
+        created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Índices para integrações de pagamento
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_payment_status ON appointments(payment_status);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_pix_payments_appt ON appointment_pix_payments(appointment_id, created_at DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_pix_payments_mp_payment_id ON appointment_pix_payments(mp_payment_id) WHERE mp_payment_id IS NOT NULL;`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_mp_accounts_user_id ON mercadopago_accounts(user_id);`);
+
     // Evolução: adicionar notes_enc em appointment_payments (se tabela já existir)
     try {
       await pool.query(`ALTER TABLE appointment_payments ADD COLUMN IF NOT EXISTS notes_enc TEXT;`);
     } catch (err) {
       // ignore
+      void err;
+    }
+
+    // Evolução: adicionar colunas de pagamento em appointments (se tabela já existir)
+    try {
+      await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) DEFAULT 'unpaid';`);
+      await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(30);`);
+      await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_approved_by_user_id INTEGER;`);
+      await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_approved_at TIMESTAMP;`);
+    } catch (err) {
+      void err;
+    }
+
+    // FK para aprovação manual de pagamento (opcional)
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'appointments_payment_approved_by_user_id_fkey'
+          ) THEN
+            ALTER TABLE appointments ADD CONSTRAINT appointments_payment_approved_by_user_id_fkey
+            FOREIGN KEY (payment_approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
       void err;
     }
 

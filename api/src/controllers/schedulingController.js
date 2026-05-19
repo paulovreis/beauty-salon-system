@@ -217,6 +217,9 @@ class SchedulingController {
 					   a.appointment_date,
 					   a.appointment_time,
 					   a.status,
+					   a.payment_status,
+					   a.payment_provider,
+					   a.payment_approved_at,
 					   a.duration_minutes,
 					   a.price,
 					   a.notes,
@@ -225,10 +228,23 @@ class SchedulingController {
 					   c.phone_enc as client_phone_enc,
 					   e.name as employee_name,
 					   s.name as service_name
+					   ,px.mp_payment_id as pix_mp_payment_id
+					   ,px.mp_payment_status as pix_mp_status
+					   ,px.qr_code as pix_qr_code
+					   ,px.qr_code_base64 as pix_qr_code_base64
+					   ,px.ticket_url as pix_ticket_url
+					   ,px.expires_at as pix_expires_at
                 FROM appointments a
                 JOIN clients c ON a.client_id = c.id
                 JOIN employees e ON a.employee_id = e.id
                 JOIN services s ON a.service_id = s.id
+				LEFT JOIN LATERAL (
+				  SELECT mp_payment_id, mp_payment_status, qr_code, qr_code_base64, ticket_url, expires_at
+				  FROM appointment_pix_payments
+				  WHERE appointment_id = a.id
+				  ORDER BY created_at DESC
+				  LIMIT 1
+				) px ON true
                 WHERE a.id = $1
             `,
 				[id]
@@ -254,6 +270,8 @@ class SchedulingController {
                        a.appointment_date,
                        a.appointment_time,
                        a.status,
+					   a.payment_status,
+					   a.payment_provider,
                        a.duration_minutes,
                        a.price,
 					   a.employee_id,
@@ -289,6 +307,8 @@ class SchedulingController {
 				       a.appointment_date,
 				       a.appointment_time,
 				       a.status,
+				       a.payment_status,
+				       a.payment_provider,
 				       a.duration_minutes,
 				       a.price,
 				       c.name as client_name,
@@ -1056,7 +1076,7 @@ class SchedulingController {
 			let targetClientId;
 			const updated = await withTransaction(db, async (client) => {
 				// Busca o agendamento atual
-				const current = await client.query(`SELECT id, client_id, employee_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
+				const current = await client.query(`SELECT id, client_id, employee_id, status, price, payment_status FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
 				if(!current.rows.length){
 					const e = new Error('Agendamento não encontrado');
 					e.statusCode = 404;
@@ -1069,17 +1089,21 @@ class SchedulingController {
 				// Ajusta métricas básicas de cliente quando completa ou cancela
 				if(appt.status !== 'completed' && newStatus === 'completed'){
 					await client.query(`UPDATE clients SET total_visits = total_visits + 1, total_spent = total_spent + $2, last_visit = CURRENT_DATE WHERE id = $1`,[appt.client_id, appt.price]);
-					// Registrar pagamento do serviço, se método fornecido (ou default)
-					const method = (payment_method || '').toLowerCase().trim();
-					const allowed = ['cash','credit','debit','pix','transfer','boleto'];
-					const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : 'cash');
-					const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
-					const normalizedNotes = normalizeText(notes);
-					const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
-					await client.query(
-						`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes, notes_enc) VALUES ($1,$2,$3,NULL,$4)`,
-						[id, paidAmount, chosenMethod, notesEnc]
-					);
+					// Registrar pagamento do serviço (idempotente por appointment_id)
+					const existingPay = await client.query(`SELECT 1 FROM appointment_payments WHERE appointment_id = $1 LIMIT 1`, [id]);
+					if (!existingPay.rows.length) {
+						const method = (payment_method || '').toLowerCase().trim();
+						const allowed = ['cash','credit','debit','pix','transfer','boleto'];
+						const fallback = String(appt.payment_status || '').toLowerCase() === 'paid' ? 'pix' : 'cash';
+						const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : fallback);
+						const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
+						const normalizedNotes = normalizeText(notes);
+						const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
+						await client.query(
+							`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes, notes_enc) VALUES ($1,$2,$3,NULL,$4)`,
+							[id, paidAmount, chosenMethod, notesEnc]
+						);
+					}
 				}
 				if(appt.status === 'completed' && newStatus === 'canceled'){
 					// Reverte visita/gasto se estava marcado como completed antes
