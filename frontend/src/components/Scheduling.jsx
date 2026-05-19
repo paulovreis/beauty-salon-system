@@ -265,7 +265,7 @@ export default function Scheduling() {
       setMpLoading(true)
       const data = await MercadoPagoApi.getConnectUrl()
       if (!data?.url) throw new Error('URL de conexão indisponível')
-      window.location.href = data.url
+      window.open(data.url, '_blank')
     } catch (e) {
       showError(e)
     } finally {
