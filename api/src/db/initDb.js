@@ -699,5 +699,6 @@ export const createTables = async () => {
     console.log('Tabelas, índices e dados iniciais criados (se não existiam).');
   } catch (err) {
     console.error('Erro ao criar tabelas:', err);
+    throw err;
   }
 };
