@@ -751,7 +751,7 @@ export default function Scheduling() {
           {mpConnected ? (
             <Badge variant="outline">Mercado Pago conectado</Badge>
           ) : (
-            <Button variant="outline" onClick={handleConnectMercadoPago} disabled={mpLoading}>
+            <Button variant="outline" target="_blank" onClick={handleConnectMercadoPago} disabled={mpLoading}>
               {mpLoading ? 'Conectando...' : 'Conectar Mercado Pago'}
             </Button>
           )}
