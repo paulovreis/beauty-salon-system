@@ -553,7 +553,6 @@ export const createTables = async () => {
     `);
 
     // Índices para integrações de pagamento
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_appointments_payment_status ON appointments(payment_status);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_pix_payments_appt ON appointment_pix_payments(appointment_id, created_at DESC);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_pix_payments_mp_payment_id ON appointment_pix_payments(mp_payment_id) WHERE mp_payment_id IS NOT NULL;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_mp_accounts_user_id ON mercadopago_accounts(user_id);`);
@@ -572,6 +571,26 @@ export const createTables = async () => {
       await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(30);`);
       await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_approved_by_user_id INTEGER;`);
       await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_approved_at TIMESTAMP;`);
+    } catch (err) {
+      void err;
+    }
+
+    // Índice depende da coluna existir (bancos antigos podem não ter ainda)
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'appointments'
+              AND column_name = 'payment_status'
+          ) THEN
+            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_appointments_payment_status ON appointments(payment_status)';
+          END IF;
+        END $$;
+      `);
     } catch (err) {
       void err;
     }
