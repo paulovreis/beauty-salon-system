@@ -3,6 +3,25 @@ import dotenv from 'dotenv';
 import { decryptString } from '../utils/fieldCrypto.js';
 dotenv.config();
 
+function formatDateBR(dateVal) {
+  if (!dateVal) return '';
+  try {
+    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
+    return `${d}/${m}/${y}`;
+  } catch { return ''; }
+}
+
+function formatDateLongBR(dateVal) {
+  if (!dateVal) return '';
+  try {
+    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
+    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return `${weekdays[date.getDay()]}, ${Number(d)} de ${months[Number(m) - 1]} de ${y}`;
+  } catch { return ''; }
+}
+
 function tryDecrypt(value) {
   if (!value || typeof value !== 'string') return value;
   try {
@@ -293,15 +312,15 @@ class WhatsAppNotificationService {
     let message = `🎉 *Novo Agendamento!*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (appointment.notes) {
       message += `📝 *Observações:* ${appointment.notes}\n`;
     }
-    
+
     message += `\n✅ Agendamento confirmado em seu nome!\n`;
     message += `📲 Prepare-se para atender mais este cliente! 💆‍♀️`;
     
@@ -312,15 +331,15 @@ class WhatsAppNotificationService {
   createCancelledAppointmentMessage(employee, appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (reason) {
       message += `📝 *Motivo:* ${reason}\n`;
     }
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?`;
     
@@ -332,11 +351,11 @@ class WhatsAppNotificationService {
     let message = `✅ *Agendamento Confirmado!*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     message += `\n🎯 Cliente confirmou presença!\n`;
     message += `💪 Prepare-se para um atendimento incrível! ✨`;
     
@@ -357,7 +376,7 @@ class WhatsAppNotificationService {
     });
     
     message += `📅 *Dados atuais:*\n`;
-    message += `🗓️ Data: ${new Date(newAppointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `🗓️ Data: ${formatDateBR(newAppointment.appointment_date)}\n`;
     message += `🕐 Horário: ${newAppointment.appointment_time}\n`;
     message += `✂️ Serviço: ${newAppointment.service_name}\n`;
     message += `💰 Valor: R$ ${parseFloat(newAppointment.service_price).toFixed(2)}\n`;
@@ -458,21 +477,16 @@ class WhatsAppNotificationService {
     
     message += `📋 *DETALHES DO AGENDAMENTO:*\n`;
     message += `═══════════════════════════\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 *Data:* ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (appointment.notes) {
       message += `📝 *Observações:* ${appointment.notes}\n`;
     }
-    
+
     message += `\n📍 *${process.env.NOME_SALAO || 'Nosso Salão'}*\n`;
     message += `📱 Entre em contato conosco se precisar reagendar!\n\n`;
     message += `✨ *Estamos ansiosos para atendê-la!* ✨\n`;
@@ -497,12 +511,7 @@ class WhatsAppNotificationService {
     
     message += `📋 *DADOS ATUALIZADOS:*\n`;
     message += `═══════════════════════\n`;
-    message += `📅 Data: ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 Data: ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 Horário: ${appointment.appointment_time}\n`;
     message += `✂️ Serviço: ${appointment.service_name}\n`;
     message += `👨‍💼 Profissional: ${appointment.employee_name}\n`;
@@ -520,20 +529,15 @@ class WhatsAppNotificationService {
     message += `Olá, ${appointment.client_name}!\n`;
     message += `Infelizmente seu agendamento foi cancelado:\n\n`;
     
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric', 
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 *Data:* ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
-    
+
     if (reason) {
       message += `📝 *Motivo:* ${reason}\n`;
     }
-    
+
     message += `\n💔 Sentimos muito pelo inconveniente.\n`;
     message += `📞 Entre em contato para reagendar: [seu telefone]\n`;
     message += `💖 Esperamos vê-lo(a) em breve!`;
@@ -545,14 +549,14 @@ class WhatsAppNotificationService {
   createSimpleCancellationMessage(appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date) || 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?\n\n`;
-    
+
     return message;
   }
 
@@ -997,11 +1001,9 @@ class WhatsAppNotificationService {
 
   // Templates de mensagens para confirmação
   createConfirmedAppointmentMessage(appointment, recipient) {
-    const date = new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo'
-    });
+    const date = formatDateBR(appointment.appointment_date);
     const time = appointment.appointment_time;
-    
+
     if (recipient === 'employee') {
       return `✅ *Agendamento Confirmado*
 
@@ -1030,11 +1032,9 @@ Nos vemos em breve! 😊`;
 
   // Templates de mensagens para conclusão
   createCompletedAppointmentMessage(appointment, recipient) {
-    const date = new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo'
-    });
+    const date = formatDateBR(appointment.appointment_date);
     const time = appointment.appointment_time;
-    
+
     if (recipient === 'employee') {
       return `✅ *Serviço Concluído*
 
@@ -1101,14 +1101,14 @@ Volte sempre! 😊✨`;
   createSimpleCancellationMessage(appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date) || 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?\n\n`;
-    
+
     return message;
   }
 
@@ -1117,13 +1117,8 @@ Volte sempre! 😊✨`;
     let message = `😔 *Agendamento Cancelado*\n\n`;
     message += `Olá, ${appointment.client_name || 'Cliente'}!\n`;
     message += `Infelizmente seu agendamento foi cancelado:\n\n`;
-    
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric', 
-      month: 'long',
-      day: 'numeric'
-    }) : 'N/A'}\n`;
+
+    message += `📅 *Data:* ${appointment.appointment_date ? formatDateLongBR(appointment.appointment_date) : 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;  
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     
