@@ -6,6 +6,7 @@ import buildErrorResponse from "../utils/errorResponse.js";
 import { createClientNotification } from '../utils/clientNotifications.js';
 import { decryptString, encryptString, hmacSha256Hex, normalizePhoneBR, normalizeText } from '../utils/fieldCrypto.js';
 import { toDateOnlyString } from '../utils/dateOnly.js';
+import sseManager from '../services/sseManager.js';
 
 function decryptPhones(rows) {
 	if (!rows) return rows;
@@ -585,6 +586,7 @@ class SchedulingController {
 				console.warn('Scheduling create client notification warning:', notifErr?.message || notifErr);
 			}
 			
+			sseManager.broadcast('appointments:changed', { action: 'created', id: createdAppointment?.id });
 			res.status(201).json(decryptPhones(createdAppointment));
 		} catch (err) {
 			if (err?.statusCode) {
@@ -862,6 +864,7 @@ class SchedulingController {
 				// Não falha a atualização se a notificação falhar
 			}
 			
+			sseManager.broadcast('appointments:changed', { action: 'updated', id: Number(id) });
 			res.json(decryptPhones(updatedAppointment));
 		} catch (err) {
 			if (err?.statusCode) {
@@ -967,6 +970,7 @@ class SchedulingController {
 				// Não falha o cancelamento se a notificação falhar
 			}
 			
+			sseManager.broadcast('appointments:changed', { action: 'deleted', id: Number(id) });
 			res.status(204).send();
 		} catch (err) {
 			if (err?.statusCode) {
@@ -1157,6 +1161,7 @@ class SchedulingController {
 				console.warn('Scheduling transitionStatus client notification warning:', notifErr?.message || notifErr);
 			}
 			
+			sseManager.broadcast('appointments:changed', { action: newStatus, id: Number(id) });
 			res.json(updated.rows[0]);
 		}catch(err){
 			if (err?.statusCode) {

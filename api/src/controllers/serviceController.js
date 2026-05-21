@@ -1,6 +1,7 @@
 import pool from '../db/postgre.js';
 import whatsappService from '../services/whatsappNotificationService.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import sseManager from '../services/sseManager.js';
 
 class ServiceController {
   constructor(){}
@@ -91,6 +92,7 @@ class ServiceController {
                 console.error('Erro ao enviar notificação de novo serviço:', notificationError);
             }
             
+            sseManager.broadcast('services:changed', { action: 'created', id: rows[0].id });
             res.status(201).json(rows[0]);
         } catch (err) {
             console.error("Erro ao criar serviço:", err);
@@ -134,6 +136,7 @@ class ServiceController {
                 console.error('Erro ao enviar notificação de atualização de serviço:', notificationError);
             }
 
+            sseManager.broadcast('services:changed', { action: 'updated', id: rows[0].id });
             res.json(rows[0]);
         } catch (err) {
             console.error("Erro ao atualizar serviço:", err);
@@ -177,6 +180,7 @@ class ServiceController {
             } catch (notificationError) {
                 console.error('Erro ao enviar notificação de remoção de serviço:', notificationError);
             }
+            sseManager.broadcast('services:changed', { action: 'deleted', id: Number(id) });
             res.json({ message: "Serviço removido com sucesso" });
         } catch (err) {
             console.error("Erro ao remover serviço:", err);

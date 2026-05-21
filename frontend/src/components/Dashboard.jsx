@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { DollarSign, TrendingUp, Package, AlertTriangle, Scissors } from "lucide-react"
 import api from "../components/api/axios.js"
 import { forceHttpsWhenPageIsHttps } from "../utils/forceHttpsWhenPageIsHttps";
+import { useSSE } from "../hooks/useSSE";
 
 const API_URL = forceHttpsWhenPageIsHttps(
   process.env.REACT_APP_API_URL || "http://localhost:5000"
@@ -41,39 +42,38 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true)
-      setError("")
-      try {
-        const [statsRes, recentRes, topRes, revenueRes, expenseRes] = await Promise.all([
-          axiosWithAuth(`${API_URL}/dashboard/stats`, { method: "get" }),
-          axiosWithAuth(`${API_URL}/dashboard/recent-appointments`, { method: "get" }),
-          axiosWithAuth(`${API_URL}/dashboard/top-employees`, { method: "get" }),
-          axiosWithAuth(`${API_URL}/dashboard/revenue-summary`, { method: "get" }),
-          axiosWithAuth(`${API_URL}/dashboard/expense-breakdown`, { method: "get" })
-        ])
-        setStats(statsRes.data)
-        setRecent(Array.isArray(recentRes.data) ? recentRes.data : [])
-        setTopEmployees(Array.isArray(topRes.data) ? topRes.data : [])
-        setRevenue(revenueRes.data)
-        // O expense-breakdown retorna um objeto com by_category como array
-        setExpenses(Array.isArray(expenseRes.data?.by_category) ? expenseRes.data.by_category : [])
-      } catch (err) {
-        // Se for erro de permissão, mostre mensagem clara
-        if (err.message && err.message.toLowerCase().includes("acesso negado")) {
-          setError("Você não tem permissão para acessar o dashboard.")
-        } else if (err.message && err.message.toLowerCase().includes("sessão expirada")) {
-          setError("Sessão expirada. Faça login novamente.")
-        } else {
-          setError("Erro ao carregar dados do dashboard.")
-        }
-      } finally {
-        setLoading(false)
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const [statsRes, recentRes, topRes, revenueRes, expenseRes] = await Promise.all([
+        axiosWithAuth(`${API_URL}/dashboard/stats`, { method: "get" }),
+        axiosWithAuth(`${API_URL}/dashboard/recent-appointments`, { method: "get" }),
+        axiosWithAuth(`${API_URL}/dashboard/top-employees`, { method: "get" }),
+        axiosWithAuth(`${API_URL}/dashboard/revenue-summary`, { method: "get" }),
+        axiosWithAuth(`${API_URL}/dashboard/expense-breakdown`, { method: "get" })
+      ])
+      setStats(statsRes.data)
+      setRecent(Array.isArray(recentRes.data) ? recentRes.data : [])
+      setTopEmployees(Array.isArray(topRes.data) ? topRes.data : [])
+      setRevenue(revenueRes.data)
+      setExpenses(Array.isArray(expenseRes.data?.by_category) ? expenseRes.data.by_category : [])
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes("acesso negado")) {
+        setError("Você não tem permissão para acessar o dashboard.")
+      } else if (err.message && err.message.toLowerCase().includes("sessão expirada")) {
+        setError("Sessão expirada. Faça login novamente.")
+      } else {
+        setError("Erro ao carregar dados do dashboard.")
       }
+    } finally {
+      setLoading(false)
     }
-    fetchData()
   }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  useSSE({ 'appointments:changed': fetchData })
 
   const expenseTotal = useMemo(() => {
     if (!Array.isArray(expenses) || expenses.length === 0) return 0

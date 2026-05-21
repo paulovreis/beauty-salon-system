@@ -1,5 +1,6 @@
 import pool from '../db/postgre.js';
 import buildErrorResponse from '../utils/errorResponse.js';
+import sseManager from '../services/sseManager.js';
 
 const getPool = (req) => req.pool || pool;
 
@@ -24,6 +25,7 @@ class ServiceCategoryController {
         return res.status(409).json({ message: 'Já existe uma categoria com este nome' });
       }
       const { rows } = await db.query('INSERT INTO service_categories (name, description) VALUES ($1, $2) RETURNING *', [name, description]);
+      sseManager.broadcast('categories:changed', { action: 'created', id: rows[0].id });
       res.status(201).json(rows[0]);
     } catch (err) {
       console.error('Erro ao criar categoria:', err);
@@ -51,6 +53,7 @@ class ServiceCategoryController {
         description: description ?? current.rows[0].description
       };
       const { rows } = await db.query('UPDATE service_categories SET name = $1, description = $2 WHERE id = $3 RETURNING *', [updated.name, updated.description, id]);
+      sseManager.broadcast('categories:changed', { action: 'updated', id: Number(id) });
       res.json(rows[0]);
     } catch (err) {
       console.error('Erro ao atualizar categoria:', err);
@@ -66,6 +69,7 @@ class ServiceCategoryController {
       if (rowCount === 0) {
         return res.status(404).json({ message: 'Categoria não encontrada' });
       }
+      sseManager.broadcast('categories:changed', { action: 'deleted', id: Number(id) });
       res.json({ message: 'Categoria removida com sucesso' });
     } catch (err) {
       console.error('Erro ao remover categoria:', err);

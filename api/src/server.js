@@ -21,6 +21,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import mobileRoutes from './routes/mobileRoutes.js';
 import mercadoPagoRoutes from './routes/mercadoPagoRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
+import eventsRoutes from './routes/eventsRoutes.js';
 import schedulerService from './services/schedulerService.js';
 import sanitizeRequest from './middlewares/sanitizeRequest.js';
 const { createTables } = await import('./db/initDb.js');
@@ -169,6 +170,11 @@ app.use('/mercadopago', (req, res, next) => {
   req.pool = pool;
   next();
 }, mercadoPagoRoutes);
+
+app.use('/events', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, eventsRoutes);
 
 const PORT = process.env.PORT || 5000;
 

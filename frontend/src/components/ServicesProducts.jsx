@@ -31,6 +31,7 @@ import { Textarea } from "./ui/textarea";
 import { Plus, Edit, Trash2, Calculator } from "lucide-react";
 import { getCurrentUserRole } from "../lib/auth";
 import { useAlert } from "../hooks/useAlert";
+import { useSSE } from "../hooks/useSSE";
 import { AlertDisplay } from "./AlertDisplay";
 
 export default function ServicesProducts() {
@@ -177,6 +178,11 @@ export default function ServicesProducts() {
     fetchServices();
     fetchCategories();
   }, [fetchServices, fetchCategories]);
+
+  useSSE({
+    'services:changed': fetchServices,
+    'categories:changed': () => { fetchCategories(); fetchServices(); },
+  });
 
   async function handleAddService() {
     clearAlert();

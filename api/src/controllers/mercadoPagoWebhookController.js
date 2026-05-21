@@ -8,6 +8,7 @@ import {
   getValidAccessTokenForUser,
 } from '../services/mercadoPagoService.js';
 import whatsappService from '../services/whatsappNotificationService.js';
+import sseManager from '../services/sseManager.js';
 
 function mapMpStatusToAppointmentPaymentStatus(mpStatus) {
   const s = String(mpStatus || '').toLowerCase();
@@ -100,6 +101,15 @@ const MercadoPagoWebhookController = {
 
         return { ok: true, appointment_id: localPayment.appointment_id, payment_status: appointmentPaymentStatus, just_paid: appointmentPaymentStatus === 'paid' };
       });
+
+      // Broadcast real-time event to all connected SSE clients
+      if (updated?.appointment_id) {
+        sseManager.broadcast('payment:confirmed', {
+          appointmentId: updated.appointment_id,
+          paymentStatus: updated.payment_status,
+          mpPaymentId: mpPaymentId,
+        });
+      }
 
       // Send payment confirmation WhatsApp notifications (best-effort, outside transaction)
       if (updated?.just_paid && updated?.appointment_id) {

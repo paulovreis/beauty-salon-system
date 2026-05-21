@@ -21,6 +21,7 @@ import { axiosWithAuth } from "./api/axiosWithAuth"
 import { SchedulingApi, ClientsApi, MercadoPagoApi, PixPaymentsApi } from "./api/scheduling"
 import { useAlert } from "../hooks/useAlert";
 import { AlertDisplay } from "./AlertDisplay";
+import { useSSE } from "../hooks/useSSE";
 
 export default function Scheduling() {
   const { alert, showSuccess, showError, clearAlert } = useAlert();
@@ -70,6 +71,12 @@ export default function Scheduling() {
   const [pixTarget, setPixTarget] = useState(null)
   const [pixLoading, setPixLoading] = useState(false)
   const [pixData, setPixData] = useState(null)
+  // Refs so SSE handler always reads current state without stale closure
+  const pixDataRef = useRef(null)
+  const pixDialogOpenRef = useRef(false)
+  useEffect(() => { pixDataRef.current = pixData }, [pixData])
+  useEffect(() => { pixDialogOpenRef.current = pixDialogOpen }, [pixDialogOpen])
+
   const paymentMethods = [
     { value: 'cash', label: 'Dinheiro' },
     { value: 'credit', label: 'Crédito' },
@@ -750,6 +757,25 @@ export default function Scheduling() {
     () => [...todayAppointments].sort((a, b) => a.time.localeCompare(b.time)),
     [todayAppointments]
   )
+
+  useSSE({
+    'payment:confirmed': (data) => {
+      const { appointmentId, paymentStatus, mpPaymentId } = data
+      updateLocalPaymentStatus(appointmentId, paymentStatus, 'mercadopago')
+      if (
+        pixDialogOpenRef.current &&
+        pixDataRef.current?.mp_payment_id != null &&
+        String(pixDataRef.current.mp_payment_id) === String(mpPaymentId)
+      ) {
+        setPixData(prev => ({ ...(prev || {}), payment_status: paymentStatus }))
+        setPixDialogOpen(false)
+        showSuccess('Pagamento PIX confirmado!')
+      }
+    },
+    'appointments:changed': () => {
+      Promise.all([loadNextFive(), loadUpcoming(true)])
+    },
+  })
 
   return (
     <div className="space-y-6">
