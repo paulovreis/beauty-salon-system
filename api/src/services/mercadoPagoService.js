@@ -113,10 +113,21 @@ export async function exchangeCodeForTokens({ code }) {
   body.set('code', code);
   body.set('redirect_uri', redirectUri);
 
-  const res = await axios.post(url, body.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 15000,
-  });
+  let res;
+  try {
+    res = await axios.post(url, body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 15000,
+    });
+  } catch (axiosErr) {
+    const mpError = axiosErr?.response?.data;
+    console.error('MP exchangeCodeForTokens failed:', JSON.stringify(mpError));
+    console.error('MP request body (redacted secret):', { client_id: clientId, grant_type: 'authorization_code', redirect_uri: redirectUri, code });
+    const err = new Error(mpError?.message || mpError?.error || 'MP token exchange failed');
+    err.statusCode = axiosErr?.response?.status || 500;
+    err.mpError = mpError;
+    throw err;
+  }
 
   return res.data;
 }

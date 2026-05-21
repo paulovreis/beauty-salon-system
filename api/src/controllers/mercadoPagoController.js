@@ -99,7 +99,11 @@ const MercadoPagoController = {
       return res.json({ ok: true, connected: true });
     } catch (err) {
       console.error('MercadoPago oauthCallback error:', err);
-      return res.status(err?.statusCode || 500).json({ message: 'Erro no callback OAuth Mercado Pago', ...buildErrorResponse(err) });
+      return res.status(err?.statusCode || 500).json({
+        message: 'Erro no callback OAuth Mercado Pago',
+        mp_error: err?.mpError || null,
+        ...buildErrorResponse(err),
+      });
     }
   },
 };
