@@ -505,8 +505,14 @@ function App() {
 	useEffect(() => {
 		const urlParams = new URLSearchParams(window.location.search);
 		const token = urlParams.get("token");
+		const mpConnected = urlParams.get("mp_connected");
 		if (token) {
 			setShowResetPassword(true);
+		}
+		if (mpConnected === "1") {
+			// Remove the query param from the URL without reloading
+			window.history.replaceState({}, document.title, window.location.pathname);
+			setActiveTab("scheduling");
 		}
 	}, []);
 

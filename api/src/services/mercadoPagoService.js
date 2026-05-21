@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { decryptString, encryptString } from '../utils/fieldCrypto.js';
 
 const MP_API_BASE_URL = process.env.MP_API_BASE_URL || 'https://api.mercadopago.com';
-const MP_AUTH_BASE_URL = process.env.MP_AUTH_BASE_URL || 'https://auth.mercadopago.com.br';
+const MP_AUTH_BASE_URL = process.env.MP_AUTH_BASE_URL || 'https://auth.mercadopago.com';
 
 function requireEnv(name) {
   const value = (process.env[name] || '').trim();
