@@ -24,7 +24,9 @@ const MercadoPagoWebhookController = {
     try {
       const signatureHeader = req.get('x-signature');
       const requestId = req.get('x-request-id');
-      const dataId = req.body?.data?.id;
+      // MP sends data.id as a query param AND in the body.
+      // The HMAC manifest uses the query param value.
+      const dataId = req.query?.['data.id'] ?? req.body?.data?.id;
 
       const valid = verifyMercadoPagoWebhookSignature({
         signatureHeader,

@@ -35,7 +35,7 @@ export function verifyMercadoPagoWebhookSignature({ signatureHeader, requestId, 
 
   const ts = parsed.ts;
   const v1 = parsed.v1;
-  const id = String(dataId || '').trim().toLowerCase();
+  const id = String(dataId || '').trim();
   const reqId = String(requestId || '').trim();
   if (!id || !reqId || !ts) return false;
 
