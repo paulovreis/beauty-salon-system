@@ -1139,6 +1139,119 @@ Volte sempre! 😊✨`;
   }
 
   // ========================================
+  // NOTIFICAÇÕES DE PAGAMENTO PIX
+  // ========================================
+
+  createPixPaymentConfirmedClientMessage({ clientName, appointmentId, serviceName, employeeName, appointmentDate, appointmentTime, amount }) {
+    const salonName = (process.env.NOME_SALAO || 'Salão').trim();
+    const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let dateStr = '';
+    if (appointmentDate) {
+      try {
+        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
+        dateStr = `${d}/${m}/${y}`;
+      } catch { dateStr = ''; }
+    }
+
+    return [
+      `✅ *Pagamento Confirmado!*`,
+      '',
+      `Olá, *${clientName || 'Cliente'}*! 🎉`,
+      `Seu pagamento via PIX foi recebido com sucesso.`,
+      '',
+      `📋 *Comprovante - Agendamento #${appointmentId}*`,
+      `✂️ Serviço: ${serviceName || ''}`,
+      employeeName ? `👩 Profissional: ${employeeName}` : null,
+      (dateStr && appointmentTime) ? `📅 Data/hora: ${dateStr} às ${String(appointmentTime).slice(0, 5)}` : null,
+      `💰 Valor pago: *R$ ${value}*`,
+      '',
+      `💚 *${salonName}* — Obrigada pela preferência! Até logo! 😊`,
+    ].filter(l => l !== null).join('\n');
+  }
+
+  createPixPaymentConfirmedEmployeeMessage({ clientName, appointmentId, serviceName, appointmentDate, appointmentTime, amount }) {
+    const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let dateStr = '';
+    if (appointmentDate) {
+      try {
+        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
+        dateStr = `${d}/${m}/${y}`;
+      } catch { dateStr = ''; }
+    }
+
+    return [
+      `💰 *Pagamento PIX Recebido!*`,
+      '',
+      `👤 Cliente: *${clientName || ''}*`,
+      `✂️ Serviço: ${serviceName || ''}`,
+      (dateStr && appointmentTime) ? `📅 Data/hora: ${dateStr} às ${String(appointmentTime).slice(0, 5)}` : null,
+      `💵 Valor: *R$ ${value}*`,
+      `🔖 Agendamento: #${appointmentId}`,
+      '',
+      `✅ Pagamento confirmado automaticamente via Mercado Pago.`,
+    ].filter(l => l !== null).join('\n');
+  }
+
+  async sendPixPaymentConfirmedNotification({ db, appointmentId }) {
+    try {
+      const { rows } = await db.query(
+        `SELECT a.id, a.price, a.appointment_date, a.appointment_time,
+                c.name AS client_name, c.phone_enc AS client_phone_enc,
+                e.name AS employee_name, e.phone_enc AS employee_phone_enc,
+                s.name AS service_name
+         FROM appointments a
+         JOIN clients c ON c.id = a.client_id
+         JOIN employees e ON e.id = a.employee_id
+         JOIN services s ON s.id = a.service_id
+         WHERE a.id = $1`,
+        [appointmentId]
+      );
+      if (!rows.length) return;
+
+      const appt = decryptPhoneFields(rows[0]);
+
+      const clientPhone = appt.phone || appt.client_phone;
+      if (clientPhone) {
+        try {
+          const msg = this.createPixPaymentConfirmedClientMessage({
+            clientName: appt.client_name,
+            appointmentId,
+            serviceName: appt.service_name,
+            employeeName: appt.employee_name,
+            appointmentDate: appt.appointment_date,
+            appointmentTime: appt.appointment_time,
+            amount: appt.price,
+          });
+          await this.sendMessage(clientPhone, msg);
+        } catch (err) {
+          console.warn('sendPixPaymentConfirmedNotification: erro ao notificar cliente:', err?.message);
+        }
+      }
+
+      const employeePhone = appt.employee_phone;
+      if (employeePhone) {
+        try {
+          const msg = this.createPixPaymentConfirmedEmployeeMessage({
+            clientName: appt.client_name,
+            appointmentId,
+            serviceName: appt.service_name,
+            appointmentDate: appt.appointment_date,
+            appointmentTime: appt.appointment_time,
+            amount: appt.price,
+          });
+          await this.sendMessage(employeePhone, msg);
+        } catch (err) {
+          console.warn('sendPixPaymentConfirmedNotification: erro ao notificar profissional:', err?.message);
+        }
+      }
+    } catch (err) {
+      console.error('sendPixPaymentConfirmedNotification error:', err);
+    }
+  }
+
+  // ========================================
   // NOTIFICAÇÕES AVANÇADAS PARA GERENTES E DONOS
   // ========================================
 

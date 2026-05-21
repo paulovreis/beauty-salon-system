@@ -20,6 +20,13 @@ router.get(
   (req, res) => MercadoPagoController.getStatus(req, res)
 );
 
+router.delete(
+  '/disconnect',
+  authenticateJWT,
+  roleMiddleware(['owner', 'manager', 'employee']),
+  (req, res) => MercadoPagoController.disconnect(req, res)
+);
+
 // OAuth callback (public) - validates state signature
 router.get('/oauth/callback', (req, res) => MercadoPagoController.oauthCallback(req, res));
 

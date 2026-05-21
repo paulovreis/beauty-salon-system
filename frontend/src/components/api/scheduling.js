@@ -69,6 +69,10 @@ export const MercadoPagoApi = {
     const res = await axiosWithAuth('/mercadopago/connect-url');
     return res.data;
   },
+  async disconnect() {
+    const res = await axiosWithAuth('/mercadopago/disconnect', { method: 'delete' });
+    return res.data;
+  },
 };
 
 export const PixPaymentsApi = {

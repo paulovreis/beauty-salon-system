@@ -7,6 +7,7 @@ import {
   fetchPayment,
   getValidAccessTokenForUser,
 } from '../services/mercadoPagoService.js';
+import whatsappService from '../services/whatsappNotificationService.js';
 
 function mapMpStatusToAppointmentPaymentStatus(mpStatus) {
   const s = String(mpStatus || '').toLowerCase();
@@ -97,8 +98,14 @@ const MercadoPagoWebhookController = {
           [localPayment.appointment_id, appointmentPaymentStatus]
         );
 
-        return { ok: true, appointment_id: localPayment.appointment_id, payment_status: appointmentPaymentStatus };
+        return { ok: true, appointment_id: localPayment.appointment_id, payment_status: appointmentPaymentStatus, just_paid: appointmentPaymentStatus === 'paid' };
       });
+
+      // Send payment confirmation WhatsApp notifications (best-effort, outside transaction)
+      if (updated?.just_paid && updated?.appointment_id) {
+        whatsappService.sendPixPaymentConfirmedNotification({ db: pool, appointmentId: updated.appointment_id })
+          .catch(err => console.warn('Webhook: falha ao enviar notificação de pagamento confirmado:', err?.message));
+      }
 
       return res.status(200).json({ ok: true, ...updated });
     } catch (err) {

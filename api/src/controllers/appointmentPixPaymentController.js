@@ -19,20 +19,49 @@ function mapMpStatusToPaymentStatus(mpStatus) {
   return 'pending';
 }
 
-function formatPixMessage({ clientName, appointmentId, amount, qrCode }) {
+function formatPixMessage({ clientName, appointmentId, amount, serviceName, employeeName, appointmentDate, appointmentTime, expiresAt, qrCode, ticketUrl }) {
+  const salonName = (process.env.NOME_SALAO || 'Salão').trim();
   const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const code = (qrCode || '').trim();
 
-  return [
-    `Olá ${clientName || ''}!`,
+  let dateStr = '';
+  if (appointmentDate) {
+    try {
+      const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
+      dateStr = `${d}/${m}/${y}`;
+    } catch { dateStr = ''; }
+  }
+
+  let expiresStr = '';
+  if (expiresAt) {
+    try {
+      expiresStr = new Date(expiresAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch { expiresStr = ''; }
+  }
+
+  const lines = [
+    `💚 *${salonName}*`,
     '',
-    `Segue o PIX para pagamento do seu agendamento #${appointmentId}:`,
+    `Olá, *${clientName || 'Cliente'}*! 😊`,
+    `Segue o PIX para o seu agendamento *#${appointmentId}*:`,
     '',
-    `Valor: R$ ${value}`,
+    `✂️ Serviço: ${serviceName || ''}`,
+    employeeName ? `👩 Profissional: ${employeeName}` : null,
+    (dateStr && appointmentTime) ? `📅 Data/hora: ${dateStr} às ${String(appointmentTime).slice(0, 5)}` : null,
+    `💰 Valor: *R$ ${value}*`,
+    expiresStr ? `⏳ Válido até: ${expiresStr}` : null,
     '',
-    'PIX Copia e Cola:',
+    `📋 *PIX Copia e Cola:*`,
     code,
-  ].join('\n');
+  ];
+
+  if (ticketUrl) {
+    lines.push('', `🔗 Ou pague pelo link: ${ticketUrl}`);
+  }
+
+  lines.push('', `_Após o pagamento, seu agendamento será confirmado automaticamente._ ✅`);
+
+  return lines.filter(l => l !== null).join('\n');
 }
 
 const AppointmentPixPaymentController = {
@@ -43,9 +72,9 @@ const AppointmentPixPaymentController = {
     try {
       const result = await withTransaction(db, async (client) => {
         const { rows } = await client.query(
-          `SELECT a.id, a.price, a.payment_status,
+          `SELECT a.id, a.price, a.payment_status, a.appointment_date, a.appointment_time,
                   c.id AS client_id, c.name AS client_name, c.email AS client_email, c.phone_enc AS client_phone_enc,
-                  e.id AS employee_id, e.user_id AS employee_user_id,
+                  e.id AS employee_id, e.user_id AS employee_user_id, e.name AS employee_name,
                   s.name AS service_name
            FROM appointments a
            JOIN clients c ON c.id = a.client_id
@@ -141,6 +170,10 @@ const AppointmentPixPaymentController = {
             phone_enc: appt.client_phone_enc,
           },
           amount: appt.price,
+          serviceName: appt.service_name,
+          employeeName: appt.employee_name,
+          appointmentDate: appt.appointment_date,
+          appointmentTime: appt.appointment_time,
         };
       });
 
@@ -151,7 +184,13 @@ const AppointmentPixPaymentController = {
             clientName: result.client?.name,
             appointmentId: result.appointmentId,
             amount: result.amount,
+            serviceName: result.serviceName,
+            employeeName: result.employeeName,
+            appointmentDate: result.appointmentDate,
+            appointmentTime: result.appointmentTime,
+            expiresAt: result.pix?.expires_at,
             qrCode: result.pix.qr_code,
+            ticketUrl: result.pix?.ticket_url,
           });
 
           const phone = decryptString(result.client?.phone_enc);

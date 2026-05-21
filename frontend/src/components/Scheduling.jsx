@@ -260,6 +260,19 @@ export default function Scheduling() {
     }
   }
 
+  const handleDisconnectMercadoPago = async () => {
+    try {
+      setMpLoading(true)
+      await MercadoPagoApi.disconnect()
+      setMpConnected(false)
+      showSuccess('Mercado Pago desconectado com sucesso.')
+    } catch (e) {
+      showError(e)
+    } finally {
+      setMpLoading(false)
+    }
+  }
+
   const handleConnectMercadoPago = async () => {
     try {
       setMpLoading(true)
@@ -749,9 +762,14 @@ export default function Scheduling() {
         </div>
         <div className="flex items-center gap-2">
           {mpConnected ? (
-            <Badge variant="outline">Mercado Pago conectado</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Mercado Pago conectado</Badge>
+              <Button variant="ghost" size="sm" onClick={handleDisconnectMercadoPago} disabled={mpLoading} className="text-destructive hover:text-destructive">
+                {mpLoading ? '...' : 'Desconectar'}
+              </Button>
+            </div>
           ) : (
-            <Button variant="outline" target="_blank" onClick={handleConnectMercadoPago} disabled={mpLoading}>
+            <Button variant="outline" onClick={handleConnectMercadoPago} disabled={mpLoading}>
               {mpLoading ? 'Conectando...' : 'Conectar Mercado Pago'}
             </Button>
           )}
@@ -1202,11 +1220,18 @@ export default function Scheduling() {
                     <p className="text-sm text-muted-foreground">Nenhum PIX gerado ainda.</p>
                   )}
 
-                  {pixData?.expires_at && (
-                    <p className="text-xs text-muted-foreground">
-                      Expira em: {new Date(pixData.expires_at).toLocaleString('pt-BR')}
-                    </p>
-                  )}
+                  {pixData?.expires_at && (() => {
+                    const isExpired = new Date(pixData.expires_at) < new Date()
+                    return isExpired ? (
+                      <p className="text-xs text-destructive font-medium">
+                        ⚠️ PIX expirado em {new Date(pixData.expires_at).toLocaleString('pt-BR')} — gere um novo.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Expira em: {new Date(pixData.expires_at).toLocaleString('pt-BR')}
+                      </p>
+                    )
+                  })()}
 
                   {pixData?.qr_code && (
                     <div className="space-y-2">
@@ -1244,20 +1269,36 @@ export default function Scheduling() {
                 </>
               )}
 
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setPixDialogOpen(false)}>
-                  Fechar
-                </Button>
-                <Button variant="outline" onClick={handleApproveManual} disabled={pixLoading}>
-                  Aprovar manualmente
-                </Button>
-                <Button
-                  onClick={pixData?.mp_payment_id ? handleResendPix : handleGeneratePix}
-                  disabled={pixLoading || !mpConnected}
-                >
-                  {pixData?.mp_payment_id ? 'Reenviar PIX' : 'Gerar PIX'}
-                </Button>
-              </div>
+              {(() => {
+                const currentStatus = (pixData?.payment_status ?? pixTarget?.paymentStatus ?? '').toLowerCase()
+                const isPaid = currentStatus === 'paid'
+                const hasPix = !!pixData?.mp_payment_id
+                const isExpiredOrFailed = currentStatus === 'expired' || currentStatus === 'failed'
+                // Label do botão de ação principal
+                let pixBtnLabel = 'Gerar PIX'
+                if (hasPix && !isExpiredOrFailed && !isPaid) pixBtnLabel = 'Reenviar PIX'
+                else if (hasPix && (isExpiredOrFailed)) pixBtnLabel = 'Gerar novo PIX'
+                return (
+                  <div className="flex justify-end gap-2 flex-wrap">
+                    <Button variant="secondary" onClick={() => setPixDialogOpen(false)}>
+                      Fechar
+                    </Button>
+                    {!isPaid && (
+                      <Button variant="outline" onClick={handleApproveManual} disabled={pixLoading}>
+                        Aprovar manualmente
+                      </Button>
+                    )}
+                    {!isPaid && (
+                      <Button
+                        onClick={hasPix && !isExpiredOrFailed ? handleResendPix : handleGeneratePix}
+                        disabled={pixLoading || !mpConnected}
+                      >
+                        {pixBtnLabel}
+                      </Button>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </DialogContent>

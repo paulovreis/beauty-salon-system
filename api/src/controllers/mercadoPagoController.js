@@ -7,6 +7,24 @@ import {
 } from '../services/mercadoPagoService.js';
 
 const MercadoPagoController = {
+  async disconnect(req, res) {
+    const db = req.pool;
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ message: 'Não autenticado' });
+
+      const { rowCount } = await db.query(
+        `DELETE FROM mercadopago_accounts WHERE user_id = $1`,
+        [userId]
+      );
+
+      return res.json({ ok: true, disconnected: rowCount > 0 });
+    } catch (err) {
+      console.error('MercadoPago disconnect error:', err);
+      return res.status(500).json({ message: 'Erro ao desconectar Mercado Pago', ...buildErrorResponse(err) });
+    }
+  },
+
   async getConnectUrl(req, res) {
     try {
       const userId = req.user?.id;
