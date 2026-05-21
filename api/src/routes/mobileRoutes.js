@@ -8,6 +8,7 @@ import MobileAppointmentsController from '../controllers/mobile/appointmentsCont
 import MobileCatalogController from '../controllers/mobile/catalogController.js';
 import MobileDashboardController from '../controllers/mobile/dashboardController.js';
 import MobilePushController from '../controllers/mobile/pushController.js';
+import MobilePixPaymentController from '../controllers/mobile/pixPaymentController.js';
 import {
   validateAuth,
   validateForgotPassword,
@@ -41,6 +42,8 @@ router.post('/notifications/read-all', ...requireClientRole(), MobileNotificatio
 router.get('/appointments', ...requireClientRole(), MobileAppointmentsController.list);
 router.post('/appointments', ...requireClientRole(), MobileAppointmentsController.create);
 router.post('/appointments/:id/cancel', ...requireClientRole(), MobileAppointmentsController.cancel);
+router.post('/appointments/:id/pix', ...requireClientRole(), MobilePixPaymentController.generatePix);
+router.get('/appointments/:id/pix/latest', ...requireClientRole(), MobilePixPaymentController.getLatestPix);
 
 router.get('/services', ...requireClientRole(), MobileCatalogController.listServices);
 router.get('/employees', ...requireClientRole(), MobileCatalogController.listEmployees);

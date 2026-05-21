@@ -9,6 +9,7 @@ import {
 } from '../services/mercadoPagoService.js';
 import whatsappService from '../services/whatsappNotificationService.js';
 import sseManager from '../services/sseManager.js';
+import { createClientNotification } from '../utils/clientNotifications.js';
 
 function mapMpStatusToAppointmentPaymentStatus(mpStatus) {
   const s = String(mpStatus || '').toLowerCase();
@@ -111,8 +112,24 @@ const MercadoPagoWebhookController = {
         });
       }
 
-      // Send payment confirmation WhatsApp notifications (best-effort, outside transaction)
+      // Send push notification + WhatsApp when payment is confirmed (best-effort, outside transaction)
       if (updated?.just_paid && updated?.appointment_id) {
+        // Push notification to the client's mobile devices
+        pool.query(
+          `SELECT a.client_id FROM appointments a WHERE a.id = $1 LIMIT 1`,
+          [updated.appointment_id]
+        ).then(({ rows }) => {
+          const clientId = rows[0]?.client_id;
+          if (!clientId) return;
+          return createClientNotification(pool, {
+            clientId,
+            type: 'payment_confirmed',
+            title: '✅ Pagamento confirmado!',
+            body: 'Seu pagamento PIX foi recebido. Agendamento confirmado.',
+            data: { appointment_id: updated.appointment_id },
+          });
+        }).catch(err => console.warn('Webhook: push notification warning:', err?.message));
+
         whatsappService.sendPixPaymentConfirmedNotification({ db: pool, appointmentId: updated.appointment_id })
           .catch(err => console.warn('Webhook: falha ao enviar notificação de pagamento confirmado:', err?.message));
       }

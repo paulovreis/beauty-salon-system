@@ -65,6 +65,7 @@ const MobileAppointmentsController = {
              a.appointment_time,
              a.duration_minutes,
              a.status,
+             a.payment_status,
              a.price,
              a.notes,
              a.notes_enc,
