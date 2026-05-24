@@ -3,8 +3,18 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import pool from '../db/postgre.js';
+import buildErrorResponse from '../utils/errorResponse.js';
+import {
+    decryptString,
+    encryptString,
+    hmacSha256Hex,
+    normalizeEmail,
+} from '../utils/fieldCrypto.js';
 
 dotenv.config();
+
+const getPool = (req) => req.pool || pool;
 
 // Função auxiliar para enviar email
 async function sendPasswordResetEmail(email, resetToken) {
@@ -51,7 +61,7 @@ async function sendPasswordResetEmail(email, resetToken) {
         };
 
         const result = await transporter.sendMail(mailOptions);
-        console.log('Email de reset enviado:', result.messageId);
+        void result;
         return true;
     } catch (error) {
         console.error('Erro ao enviar email:', error);
@@ -65,17 +75,43 @@ class AuthController {
     async login(req, res) {
         try{
             const { email, password } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!email || !password) {
                 return res.status(400).json({ message: 'Email and password are required' });
             }
 
-            const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-            const user = rows[0];
+            const normalizedEmail = normalizeEmail(email);
+            if (!normalizedEmail) {
+                return res.status(400).json({ message: 'Email and password are required' });
+            }
+            const emailHash = hmacSha256Hex(normalizedEmail);
+
+            // Prefer hash lookup; fallback to plaintext for backward compatibility.
+            let user;
+            {
+                const { rows } = await db.query('SELECT * FROM users WHERE email_hash = $1 LIMIT 1', [emailHash]);
+                user = rows[0];
+            }
+            if (!user) {
+                const { rows } = await db.query('SELECT * FROM users WHERE email = $1 LIMIT 1', [normalizedEmail]);
+                user = rows[0];
+
+                // Opportunistic backfill (encrypt + hash) if legacy row.
+                if (user && !user.email_hash) {
+                    try {
+                        const emailEnc = encryptString(normalizedEmail);
+                        await db.query(
+                            'UPDATE users SET email_enc = $1, email_hash = $2 WHERE id = $3',
+                            [emailEnc, emailHash, user.id]
+                        );
+                        user.email_enc = emailEnc;
+                        user.email_hash = emailHash;
+                    } catch (e) {
+                        console.warn('Auth login backfill warning:', e?.message || e);
+                    }
+                }
+            }
             if (!user) {
                 return res.status(401).json({ message: 'Invalid email or password' });
             }
@@ -87,34 +123,39 @@ class AuthController {
 
             const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
+            const emailForResponse = user.email_enc ? decryptString(user.email_enc) : user.email;
+
             return res.status(200).json({
                 message: 'Login successful',
                 token,
                 user: {
                     id: user.id,
-                    email: user.email,
+                    email: emailForResponse,
                     role: user.role
                 }
             });
         }catch(error) {
             console.error('Login error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async register(req, res) {
         try {
             const { email, password, role } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!email || !password) {
                 return res.status(400).json({ message: 'Email and password are required' });
             }
 
-            const { rows: existingRows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+            const normalizedEmail = normalizeEmail(email);
+            if (!normalizedEmail) {
+                return res.status(400).json({ message: 'Email and password are required' });
+            }
+            const emailHash = hmacSha256Hex(normalizedEmail);
+
+            const { rows: existingRows } = await db.query('SELECT id FROM users WHERE email_hash = $1 LIMIT 1', [emailHash]);
             if (existingRows.length > 0) {
                 return res.status(409).json({ message: 'User already exists' });
             }
@@ -122,24 +163,25 @@ class AuthController {
             const hashedPassword = bcrypt.hashSync(password, 8);
 
             const insertQuery = `
-                INSERT INTO users (email, password_hash, role)
-                VALUES ($1, $2, $3)
-                RETURNING id, email, role
+                INSERT INTO users (email, email_enc, email_hash, password_hash, role)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, email, email_enc, role
             `;
-            const { rows: newUserRows } = await pool.query(insertQuery, [email, hashedPassword, role || 'employee']);
+            const emailEnc = encryptString(normalizedEmail);
+            const { rows: newUserRows } = await db.query(insertQuery, [null, emailEnc, emailHash, hashedPassword, role || 'employee']);
             const newUser = newUserRows[0];
 
             return res.status(201).json({
                 message: 'User registered successfully',
                 user: {
                     id: newUser.id,
-                    email: newUser.email,
+                    email: newUser.email_enc ? decryptString(newUser.email_enc) : newUser.email,
                     role: newUser.role
                 }
             });
         } catch (error) {
             console.error('Registration error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
@@ -161,7 +203,7 @@ class AuthController {
                 if (err.name === 'TokenExpiredError') {
                     decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
                 } else {
-                    return res.status(403).json({ message: 'Invalid token' });
+                    return res.status(401).json({ message: 'Invalid token' });
                 }
             }
 
@@ -178,17 +220,14 @@ class AuthController {
             });
         } catch (error) {
             console.error('Refresh token error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async forgotPassword(req, res) {
         try {
             const { email } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             // Validate input
             if (!email) {
@@ -196,8 +235,36 @@ class AuthController {
             }
 
             // Find user by email
-            const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-            const user = rows[0];
+            const normalizedEmail = normalizeEmail(email);
+            if (!normalizedEmail) {
+                return res.status(400).json({ message: 'Email is required' });
+            }
+            const emailHash = hmacSha256Hex(normalizedEmail);
+
+            let user;
+            {
+                const { rows } = await db.query('SELECT * FROM users WHERE email_hash = $1 LIMIT 1', [emailHash]);
+                user = rows[0];
+            }
+            if (!user) {
+                const { rows } = await db.query('SELECT * FROM users WHERE email = $1 LIMIT 1', [normalizedEmail]);
+                user = rows[0];
+
+                // Opportunistic backfill (encrypt + hash) if legacy row.
+                if (user && !user.email_hash) {
+                    try {
+                        const emailEnc = encryptString(normalizedEmail);
+                        await db.query(
+                            'UPDATE users SET email_enc = $1, email_hash = $2 WHERE id = $3',
+                            [emailEnc, emailHash, user.id]
+                        );
+                        user.email_enc = emailEnc;
+                        user.email_hash = emailHash;
+                    } catch (e) {
+                        console.warn('Auth forgotPassword backfill warning:', e?.message || e);
+                    }
+                }
+            }
             
             if (!user) {
                 return res.status(200).json({ 
@@ -208,12 +275,18 @@ class AuthController {
             const resetToken = crypto.randomBytes(32).toString('hex');
             const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000);
 
-            await pool.query(
-                'UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3',
-                [resetToken, resetTokenExpires, email]
+            // Store only the hash in DB.
+            const resetTokenHash = crypto.createHash('sha256').update(resetToken, 'utf8').digest('hex');
+
+            await db.query(
+                'UPDATE users SET reset_token = NULL, reset_token_hash = $1, reset_token_expires = $2 WHERE id = $3',
+                [resetTokenHash, resetTokenExpires, user.id]
             );
 
-            const emailSent = await sendPasswordResetEmail(email, resetToken);
+            // Use decrypted email if available (avoid relying on plaintext column).
+            const emailForSend = user.email_enc ? decryptString(user.email_enc) : normalizedEmail;
+
+            const emailSent = await sendPasswordResetEmail(emailForSend, resetToken);
             if (!emailSent) {
                 return res.status(500).json({ message: 'Error sending reset email' });
             }
@@ -223,25 +296,23 @@ class AuthController {
             });
         } catch (error) {
             console.error('Forgot password error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async resetPassword(req, res) {
         try {
             const { token, newPassword } = req.body;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
             if (!token || !newPassword) {
                 return res.status(400).json({ message: 'Token and new password are required' });
             }
 
-            const { rows } = await pool.query(
-                'SELECT * FROM users WHERE reset_token = $1 AND reset_token_expires > NOW()',
-                [token]
+            const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+            const { rows } = await db.query(
+                'SELECT * FROM users WHERE reset_token_hash = $1 AND reset_token_expires > NOW()',
+                [tokenHash]
             );
             
             const user = rows[0];
@@ -252,26 +323,27 @@ class AuthController {
             // Hash new password
             const hashedPassword = bcrypt.hashSync(newPassword, 8);
 
-            await pool.query('UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE email = $2', [hashedPassword, user.email]);
+            await db.query(
+                'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_hash = NULL, reset_token_expires = NULL WHERE id = $2',
+                [hashedPassword, user.id]
+            );
 
             return res.status(200).json({ message: 'Password reset successfully' });
         } catch (error) {
             console.error('Reset password error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 
     async validateResetToken(req, res) {
         try {
             const { token } = req.params;
-            const pool = req.pool;
-            if (!pool) {
-                return res.status(500).json({ message: 'Database connection not available' });
-            }
+            const db = getPool(req);
 
-            const { rows } = await pool.query(
-                'SELECT id FROM users WHERE reset_token = $1 AND reset_token_expires > NOW()',
-                [token]
+            const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+            const { rows } = await db.query(
+                'SELECT id FROM users WHERE reset_token_hash = $1 AND reset_token_expires > NOW()',
+                [tokenHash]
             );
             
             if (rows.length === 0) {
@@ -281,7 +353,7 @@ class AuthController {
             return res.status(200).json({ message: 'Token is valid' });
         } catch (error) {
             console.error('Validate reset token error:', error);
-            return res.status(500).json({ message: 'Internal server error' });
+            return res.status(500).json({ message: 'Internal server error', ...buildErrorResponse(error) });
         }
     }
 }

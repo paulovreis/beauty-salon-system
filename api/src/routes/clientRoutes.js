@@ -2,6 +2,7 @@ import express from 'express';
 import authenticateJWT from '../middlewares/authenticateJWT.js';
 import roleMiddleware from '../middlewares/roleMiddleware.js';
 import ClientController from '../controllers/clientController.js';
+import paginationMiddleware from '../middlewares/paginationMiddleware.js';
 import { body } from 'express-validator';
 
 const router = express.Router();
@@ -22,7 +23,7 @@ const validateClientUpdate = [
 ];
 
 // Rotas
-router.get('/', authenticateJWT, roleMiddleware(['owner','manager','employee']), (req,res)=> ClientController.list(req,res));
+router.get('/', authenticateJWT, roleMiddleware(['owner','manager','employee']), paginationMiddleware(), (req,res)=> ClientController.list(req,res));
 router.get('/stats', authenticateJWT, roleMiddleware(['owner','manager']), (req,res)=> ClientController.getStats(req,res));
 router.get('/:id', authenticateJWT, roleMiddleware(['owner','manager','employee']), (req,res)=> ClientController.getById(req,res));
 router.post('/', authenticateJWT, roleMiddleware(['owner','manager']), validateClientCreate, (req,res)=> ClientController.create(req,res));

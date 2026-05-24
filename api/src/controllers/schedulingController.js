@@ -1,6 +1,44 @@
 // controllers/schedulingController.js
 import pool from "../db/postgre.js";
+import withTransaction from "../db/withTransaction.js";
 import whatsappService from "../services/whatsappNotificationService.js";
+import buildErrorResponse from "../utils/errorResponse.js";
+import { createClientNotification } from '../utils/clientNotifications.js';
+import { decryptString, encryptString, hmacSha256Hex, normalizePhoneBR, normalizeText } from '../utils/fieldCrypto.js';
+import { toDateOnlyString } from '../utils/dateOnly.js';
+import sseManager from '../services/sseManager.js';
+
+function decryptPhones(rows) {
+	if (!rows) return rows;
+	const arr = Array.isArray(rows) ? rows : [rows];
+	const mapped = arr.map((r) => {
+		if (!r || typeof r !== 'object') return r;
+		const out = { ...r };
+		if ('appointment_date' in out) {
+			out.appointment_date = toDateOnlyString(out.appointment_date);
+		}
+		if ('notes_enc' in out) {
+			out.notes = out.notes_enc ? decryptString(out.notes_enc) : out.notes;
+			delete out.notes_enc;
+		}
+		if ('client_phone_enc' in out) {
+			out.client_phone = out.client_phone_enc ? decryptString(out.client_phone_enc) : out.client_phone;
+			delete out.client_phone_enc;
+		}
+		if ('employee_phone_enc' in out) {
+			out.employee_phone = out.employee_phone_enc ? decryptString(out.employee_phone_enc) : out.employee_phone;
+			delete out.employee_phone_enc;
+		}
+		return out;
+	});
+	return Array.isArray(rows) ? mapped : mapped[0];
+}
+
+// Método auxiliar para converter horário em minutos
+const timeToMinutes = (timeStr) => {
+	const [hours, minutes] = timeStr.split(':').map(Number);
+	return hours * 60 + minutes;
+};
 
 class SchedulingController {
 	constructor() {}
@@ -58,19 +96,24 @@ class SchedulingController {
 
 	// get all schedulings - Otimizado com paginação e filtros
 	async getAllSchedulings(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		try {
-			const { 
-				page = 1, 
-				limit = 50, 
+			const {
 				status, 
 				employee_id, 
 				start_date, 
 				end_date,
 				client_search 
 			} = req.query;
+
+			const pagination = req.pagination || {
+				page: Number.parseInt(req.query.page, 10) || 1,
+				limit: Number.parseInt(req.query.limit, 10) || 50,
+			};
+			const page = pagination.page;
+			const limit = pagination.limit;
+			const offset = pagination.offset ?? (page - 1) * limit;
 			
-			const offset = (page - 1) * limit;
 			let whereConditions = [];
 			let queryParams = [];
 			let paramIndex = 1;
@@ -108,7 +151,7 @@ class SchedulingController {
 			const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
 			// Query principal otimizada usando índices
-			const { rows } = await pool.query(`
+			const { rows } = await db.query(`
 				SELECT 
 					a.id,
 					a.appointment_date,
@@ -117,8 +160,9 @@ class SchedulingController {
 					a.duration_minutes,
 					a.price,
 					a.notes,
+					a.notes_enc,
 					c.name as client_name,
-					c.phone as client_phone,
+					c.phone_enc as client_phone_enc,
 					e.name as employee_name,
 					s.name as service_name,
 					CASE 
@@ -136,7 +180,7 @@ class SchedulingController {
 			`, [...queryParams, limit, offset]);
 
 			// Count para paginação
-			const { rows: countRows } = await pool.query(`
+			const { rows: countRows } = await db.query(`
 				SELECT COUNT(*) as total 
 				FROM appointments a
 				JOIN clients c ON a.client_id = c.id
@@ -146,28 +190,26 @@ class SchedulingController {
 			`, queryParams);
 
 			res.json({
-				appointments: rows,
+				appointments: decryptPhones(rows),
 				pagination: {
-					currentPage: parseInt(page),
+					currentPage: page,
 					totalItems: parseInt(countRows[0].total),
-					itemsPerPage: parseInt(limit),
+					itemsPerPage: limit,
 					totalPages: Math.ceil(countRows[0].total / limit)
 				}
 			});
 		} catch (err) {
 			console.error('Erro ao buscar agendamentos:', err);
-			res
-				.status(500)
-				.json({ message: "Erro ao buscar agendamentos", error: err.message });
+			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
 		}
 	}
 
 	// get scheduling by id
 	async getSchedulingById(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { id } = req.params;
 		try {
-			const { rows } = await pool.query(
+			const { rows } = await db.query(
 				`
 				SELECT a.id,
 				       a.client_id,
@@ -176,17 +218,34 @@ class SchedulingController {
 					   a.appointment_date,
 					   a.appointment_time,
 					   a.status,
+					   a.payment_status,
+					   a.payment_provider,
+					   a.payment_approved_at,
 					   a.duration_minutes,
 					   a.price,
 					   a.notes,
+					   a.notes_enc,
 					   c.name as client_name,
-					   c.phone as client_phone,
+					   c.phone_enc as client_phone_enc,
 					   e.name as employee_name,
 					   s.name as service_name
+					   ,px.mp_payment_id as pix_mp_payment_id
+					   ,px.mp_payment_status as pix_mp_status
+					   ,px.qr_code as pix_qr_code
+					   ,px.qr_code_base64 as pix_qr_code_base64
+					   ,px.ticket_url as pix_ticket_url
+					   ,px.expires_at as pix_expires_at
                 FROM appointments a
                 JOIN clients c ON a.client_id = c.id
                 JOIN employees e ON a.employee_id = e.id
                 JOIN services s ON a.service_id = s.id
+				LEFT JOIN LATERAL (
+				  SELECT mp_payment_id, mp_payment_status, qr_code, qr_code_base64, ticket_url, expires_at
+				  FROM appointment_pix_payments
+				  WHERE appointment_id = a.id
+				  ORDER BY created_at DESC
+				  LIMIT 1
+				) px ON true
                 WHERE a.id = $1
             `,
 				[id]
@@ -194,32 +253,33 @@ class SchedulingController {
 			if (rows.length === 0) {
 				return res.status(404).json({ message: "Agendamento não encontrado" });
 			}
-			res.json(rows[0]);
+			res.json(decryptPhones(rows[0]));
 		} catch (err) {
-			res
-				.status(500)
-				.json({ message: "Erro ao buscar agendamento", error: err.message });
+			console.error('Erro ao buscar agendamento:', err);
+			res.status(500).json({ message: "Erro ao buscar agendamento", ...buildErrorResponse(err) });
 		}
 	}
 
 	// get scheduling by date
 	async getSchedulingsByDate(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { date } = req.params;
 		try {
-			const { rows } = await pool.query(
+			const { rows } = await db.query(
 				`
                 SELECT a.id,
                        a.appointment_date,
                        a.appointment_time,
                        a.status,
+					   a.payment_status,
+					   a.payment_provider,
                        a.duration_minutes,
                        a.price,
 					   a.employee_id,
 					   a.service_id,
 					   a.commission_amount,
                        c.name as client_name,
-                       c.phone as client_phone,
+					  c.phone_enc as client_phone_enc,
                        e.name as employee_name,
                        s.name as service_name
                 FROM appointments a
@@ -230,29 +290,30 @@ class SchedulingController {
             `,
 				[date]
 			);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
-			res
-				.status(500)
-				.json({ message: "Erro ao buscar agendamentos", error: err.message });
+			console.error('Erro ao buscar agendamentos por data:', err);
+			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
 		}
 	}
 
 	// get next 5 schedulings
 	async getNextFiveSchedulings(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		try {
 			// Usar comparação separada de data e hora para evitar problemas de timezone
 			// Inclui: todos os agendamentos com data futura OU de hoje com horário futuro
-			const { rows } = await pool.query(`
+			const { rows } = await db.query(`
 				SELECT a.id,
 				       a.appointment_date,
 				       a.appointment_time,
 				       a.status,
+				       a.payment_status,
+				       a.payment_provider,
 				       a.duration_minutes,
 				       a.price,
 				       c.name as client_name,
-				       c.phone as client_phone,
+				       c.phone_enc as client_phone_enc,
 				       e.name as employee_name,
 				       s.name as service_name
 				FROM appointments a
@@ -264,26 +325,29 @@ class SchedulingController {
 				ORDER BY a.appointment_date ASC, a.appointment_time ASC
 				LIMIT 5;
 			`);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
-			res
-				.status(500)
-				.json({ message: "Erro ao buscar agendamentos", error: err.message });
+			console.error('Erro ao buscar próximos agendamentos:', err);
+			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
 		}
 	}
 
 	// paginated upcoming schedulings (limit/offset)
 	async getUpcomingPaginated(req,res){
-		const pool = req.pool;
-		const limit = Math.min(parseInt(req.query.limit)||10,50);
-		const offset = parseInt(req.query.offset)||0;
+		const db = req.pool || pool;
+		const pagination = req.pagination || {
+			page: Number.parseInt(req.query.page, 10) || 1,
+			limit: Math.min(Number.parseInt(req.query.limit, 10) || 10, 50),
+		};
+		const limit = pagination.limit;
+		const offset = pagination.offset ?? 0;
 		try {
 			// Reutiliza o mesmo filtro tanto para dados como para a contagem total
 			const whereClause = `WHERE a.appointment_date > CURRENT_DATE
 			   OR (a.appointment_date = CURRENT_DATE AND a.appointment_time > CURRENT_TIME)`;
-			const dataPromise = pool.query(`
+			const dataPromise = db.query(`
 				SELECT a.id, a.appointment_date, a.appointment_time, a.status, a.duration_minutes, a.price,
-				       c.name as client_name, c.phone as client_phone, e.name as employee_name, s.name as service_name
+				       c.name as client_name, c.phone_enc as client_phone_enc, e.name as employee_name, s.name as service_name
 				FROM appointments a
 				JOIN clients c ON a.client_id = c.id
 				JOIN employees e ON a.employee_id = e.id
@@ -292,22 +356,23 @@ class SchedulingController {
 				ORDER BY a.appointment_date ASC, a.appointment_time ASC
 				LIMIT $1 OFFSET $2
 			`,[limit,offset]);
-			const countPromise = pool.query(`SELECT COUNT(*) FROM appointments a ${whereClause}`);
+			const countPromise = db.query(`SELECT COUNT(*) FROM appointments a ${whereClause}`);
 			const [{rows}, countResult] = await Promise.all([dataPromise, countPromise]);
 			const total = parseInt(countResult.rows[0].count,10) || 0;
 			const hasMore = offset + rows.length < total;
-			res.json({data: rows, limit, offset, total, hasMore: offset + rows.length < total});
+			res.json({data: decryptPhones(rows), limit, offset, total, hasMore: offset + rows.length < total});
 		}catch(err){
-			res.status(500).json({message:'Erro ao buscar agendamentos futuros', error: err.message});
+			console.error('Erro ao buscar agendamentos futuros:', err);
+			res.status(500).json({message:'Erro ao buscar agendamentos futuros', ...buildErrorResponse(err)});
 		}
 	}
 
 	// get schedulings by employee
 	async getSchedulingsByEmployee(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { employeeId } = req.params;
 		try {
-			const { rows } = await pool.query(
+			const { rows } = await db.query(
 				`
 				SELECT a.id,
 					   a.appointment_date,
@@ -316,7 +381,7 @@ class SchedulingController {
 					   a.duration_minutes,
 					   a.price,
 					   c.name as client_name,
-					   c.phone as client_phone,
+					   c.phone_enc as client_phone_enc,
 					   e.name as employee_name,
 					   s.name as service_name
                 FROM appointments a
@@ -327,17 +392,16 @@ class SchedulingController {
             `,
 				[employeeId]
 			);
-			res.json(rows);
+			res.json(decryptPhones(rows));
 		} catch (err) {
-			res
-				.status(500)
-				.json({ message: "Erro ao buscar agendamentos", error: err.message });
+			console.error('Erro ao buscar agendamentos por funcionário:', err);
+			res.status(500).json({ message: "Erro ao buscar agendamentos", ...buildErrorResponse(err) });
 		}
 	}
 
 	// create scheduling
 	async createScheduling(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const {
 			appointment_date,
 			appointment_time,
@@ -350,139 +414,195 @@ class SchedulingController {
 			notes,
 		} = req.body;
 		try {
-			// Buscar dados do serviço para preencher duração e preço automaticamente
-			const serviceResult = await pool.query(
-				`SELECT duration_minutes, recommended_price FROM services WHERE id = $1`,
-				[service_id]
-			);
-			if (serviceResult.rows.length === 0) {
-				return res.status(400).json({ message: "Serviço inválido" });
-			}
-			const { duration_minutes, recommended_price } = serviceResult.rows[0];
-
-			// Verificar se o funcionário está ativo
-			const employeeResult = await pool.query(
-				`SELECT status FROM employees WHERE id = $1`,
-				[employee_id]
-			);
-			if (employeeResult.rows.length === 0) {
-				return res.status(400).json({ message: "Funcionário não encontrado" });
-			}
-			if (employeeResult.rows[0].status !== 'active') {
-				return res.status(400).json({ message: "Não é possível agendar com funcionário inativo" });
-			}
-
-			await pool.query('BEGIN');
-
-			// Determina o clientId: usa o enviado ou cria/busca por telefone
-			let ensuredClientId = client_id;
-			if (!ensuredClientId) {
-				if (!client_name || !client_phone) {
-					await pool.query('ROLLBACK');
-					return res.status(400).json({ message: 'Dados do cliente são obrigatórios' });
-				}
-				// Tenta localizar cliente pelo telefone
-				const existing = await pool.query(
-					`SELECT id FROM clients WHERE phone = $1 LIMIT 1`,
-					[client_phone]
+			let createdAppointment;
+			await withTransaction(db, async (client) => {
+				// Buscar dados do serviço para preencher duração e preço automaticamente
+				const serviceResult = await client.query(
+					`SELECT duration_minutes, recommended_price FROM services WHERE id = $1`,
+					[service_id]
 				);
-				if (existing.rows.length) {
-					ensuredClientId = existing.rows[0].id;
-				} else {
-					const inserted = await pool.query(
-						`INSERT INTO clients (name, phone, first_visit, last_visit, total_visits, total_spent)
-						 VALUES ($1, $2, CURRENT_DATE, CURRENT_DATE, 0, 0) RETURNING id`,
-						[client_name, client_phone]
-					);
-					ensuredClientId = inserted.rows[0].id;
+				if (serviceResult.rows.length === 0) {
+					const e = new Error('Serviço inválido');
+					e.statusCode = 400;
+					throw e;
 				}
-			}
+				const { duration_minutes, recommended_price } = serviceResult.rows[0];
 
-			// Impede conflito com outros agendamentos
-			const conflict = await pool.query(
-				`SELECT 1 FROM appointments
-				 WHERE employee_id = $1 AND appointment_date = $2
-				   AND NOT (
-				     (appointment_time + make_interval(mins => duration_minutes)) <= $3::time
-				     OR appointment_time >= ($3::time + make_interval(mins => $4))
-				   )
-				 LIMIT 1`,
-				[employee_id, appointment_date, appointment_time, duration_minutes]
-			);
-			if (conflict.rows.length) {
-				await pool.query('ROLLBACK');
-				return res.status(409).json({ message: 'Conflito de horário para este funcionário' });
-			}
+				// Verificar se o funcionário está ativo
+				const employeeResult = await client.query(
+					`SELECT status FROM employees WHERE id = $1`,
+					[employee_id]
+				);
+				if (employeeResult.rows.length === 0) {
+					const e = new Error('Funcionário não encontrado');
+					e.statusCode = 400;
+					throw e;
+				}
+				if (employeeResult.rows[0].status !== 'active') {
+					const e = new Error('Não é possível agendar com funcionário inativo');
+					e.statusCode = 400;
+					throw e;
+				}
 
-			// Verifica se o slot está disponível
-			const slot = await pool.query(
-				`SELECT id, is_available FROM time_slots WHERE employee_id = $1 AND date = $2 AND start_time = $3 FOR UPDATE`,
-				[employee_id, appointment_date, appointment_time]
-			);
-			if (slot.rows.length && slot.rows[0].is_available === false) {
-				await pool.query('ROLLBACK');
-				return res.status(409).json({ message: 'Horário indisponível' });
-			}
+				// Determina o clientId: usa o enviado ou cria/busca por telefone
+				let ensuredClientId = client_id;
+				if (!ensuredClientId) {
+					if (!client_name || !client_phone) {
+						const e = new Error('Dados do cliente são obrigatórios');
+						e.statusCode = 400;
+						throw e;
+					}
+					const normalizedPhone = normalizePhoneBR(client_phone);
+					if (!normalizedPhone) {
+						const e = new Error('Telefone do cliente inválido');
+						e.statusCode = 400;
+						throw e;
+					}
+					const phoneHash = hmacSha256Hex(normalizedPhone);
+					const phoneEnc = encryptString(normalizedPhone);
 
-			// Calcula comissão do funcionário (se houver regra)
-			let commission_amount = null;
-			const comm = await pool.query(
-				`SELECT commission_rate FROM employee_specialties WHERE employee_id = $1 AND service_id = $2 LIMIT 1`,
-				[employee_id, service_id]
-			);
-			if (comm.rows.length) {
-				commission_amount = (Number(recommended_price) * Number(comm.rows[0].commission_rate)) / 100.0;
-			}
+					// Tenta localizar cliente por hash; fallback para plaintext durante transição.
+					let existing = await client.query(
+						`SELECT id, phone_hash, phone_enc FROM clients WHERE phone_hash = $1 LIMIT 1`,
+						[phoneHash]
+					);
+					if (!existing.rows.length) {
+						existing = await client.query(
+							`SELECT id, phone_hash, phone_enc FROM clients WHERE phone = $1 LIMIT 1`,
+							[normalizedPhone]
+						);
+						// Opportunistic backfill if found by legacy plaintext.
+						if (existing.rows.length && !existing.rows[0].phone_hash) {
+							try {
+								await client.query(
+									`UPDATE clients SET phone = NULL, phone_enc = $1, phone_hash = $2 WHERE id = $3`,
+									[phoneEnc, phoneHash, existing.rows[0].id]
+								);
+							} catch (be) {
+								console.warn('Scheduling create backfill warning:', be?.message || be);
+							}
+						}
+					}
 
-			// Cria o agendamento com duration/price
-			const { rows } = await pool.query(
-				`
-            INSERT INTO appointments (appointment_date, appointment_time, client_id, employee_id, service_id, status, notes, duration_minutes, price, commission_amount)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING *
-        `,
-				[
-					appointment_date,
-					appointment_time,
-					ensuredClientId,
-					employee_id,
-					service_id,
-					status || 'scheduled',
-					notes || null,
-					duration_minutes,
-					recommended_price,
-					commission_amount,
-				]
-			);
+					if (existing.rows.length) {
+						ensuredClientId = existing.rows[0].id;
+					} else {
+						const inserted = await client.query(
+							`INSERT INTO clients (name, phone, phone_enc, phone_hash, first_visit, last_visit, total_visits, total_spent)
+							 VALUES ($1, NULL, $2, $3, CURRENT_DATE, CURRENT_DATE, 0, 0) RETURNING id`,
+							[normalizeText(client_name) || client_name, phoneEnc, phoneHash]
+						);
+						ensuredClientId = inserted.rows[0].id;
+					}
+				}
 
-			// Marca o slot como ocupado (se existir)
-			await pool.query(
-				`UPDATE time_slots SET is_available = FALSE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
-				[employee_id, appointment_date, appointment_time]
-			);
+				// Impede conflito com outros agendamentos
+				const conflict = await client.query(
+					`SELECT 1 FROM appointments
+					 WHERE employee_id = $1 AND appointment_date = $2
+					   AND NOT (
+					     (appointment_time + make_interval(mins => duration_minutes)) <= $3::time
+					     OR appointment_time >= ($3::time + make_interval(mins => $4))
+					   )
+					 LIMIT 1`,
+					[employee_id, appointment_date, appointment_time, duration_minutes]
+				);
+				if (conflict.rows.length) {
+					const e = new Error('Conflito de horário para este funcionário');
+					e.statusCode = 409;
+					throw e;
+				}
 
-			await pool.query('COMMIT');
+				// Verifica se o slot está disponível
+				const slot = await client.query(
+					`SELECT id, is_available FROM time_slots WHERE employee_id = $1 AND date = $2 AND start_time = $3 FOR UPDATE`,
+					[employee_id, appointment_date, appointment_time]
+				);
+				if (slot.rows.length && slot.rows[0].is_available === false) {
+					const e = new Error('Horário indisponível');
+					e.statusCode = 409;
+					throw e;
+				}
+
+				// Calcula comissão do funcionário (se houver regra)
+				let commission_amount = null;
+				const comm = await client.query(
+					`SELECT commission_rate FROM employee_specialties WHERE employee_id = $1 AND service_id = $2 LIMIT 1`,
+					[employee_id, service_id]
+				);
+				if (comm.rows.length) {
+					commission_amount = (Number(recommended_price) * Number(comm.rows[0].commission_rate)) / 100.0;
+				}
+
+				// Cria o agendamento com duration/price
+				const normalizedNotes = normalizeText(notes);
+				const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
+				const { rows } = await client.query(
+					`
+						INSERT INTO appointments (appointment_date, appointment_time, client_id, employee_id, service_id, status, notes, notes_enc, duration_minutes, price, commission_amount)
+						VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10)
+						RETURNING *
+					`,
+					[
+						appointment_date,
+						appointment_time,
+						ensuredClientId,
+						employee_id,
+						service_id,
+						status || 'scheduled',
+						notesEnc,
+						duration_minutes,
+						recommended_price,
+						commission_amount,
+					]
+				);
+				createdAppointment = rows[0];
+
+				// Marca o slot como ocupado (se existir)
+				await client.query(
+					`UPDATE time_slots SET is_available = FALSE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
+					[employee_id, appointment_date, appointment_time]
+				);
+			});
 			
 			// Enviar notificações WhatsApp após criar o agendamento
 			try {
-				await whatsappService.sendNewAppointmentNotification(rows[0].id);
+				await whatsappService.sendNewAppointmentNotification(createdAppointment.id);
 			} catch (notificationError) {
 				console.error('Erro ao enviar notificação de novo agendamento:', notificationError);
 				// Não falha a criação do agendamento se a notificação falhar
 			}
+
+			// Notificação in-app/push para o cliente (best-effort)
+			try {
+				await createClientNotification(db, {
+					clientId: createdAppointment?.client_id,
+					type: 'appointment_created',
+					title: 'Agendamento criado',
+					body: 'Seu agendamento foi criado pela equipe.',
+					data: { appointment_id: createdAppointment?.id },
+				});
+			} catch (notifErr) {
+				console.warn('Scheduling create client notification warning:', notifErr?.message || notifErr);
+			}
 			
-			res.status(201).json(rows[0]);
+			sseManager.broadcast('appointments:changed', { action: 'created', id: createdAppointment?.id });
+			res.status(201).json(decryptPhones(createdAppointment));
 		} catch (err) {
-			await pool.query('ROLLBACK').catch(() => {});
-			res
-				.status(500)
-				.json({ message: "Erro ao criar agendamento", error: err.message });
+			if (err?.statusCode) {
+				return res.status(err.statusCode).json({ message: err.message });
+			}
+			console.error('Erro ao criar agendamento:', err);
+			return res.status(500).json({
+				message: 'Erro ao criar agendamento',
+				...buildErrorResponse(err),
+			});
 		}
 	}
 
 	// update scheduling
 	async updateScheduling(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { id } = req.params;
 		const {
 			appointment_date,
@@ -494,130 +614,143 @@ class SchedulingController {
 			notes,
 		} = req.body;
 		try {
-			await pool.query('BEGIN');
-			// Busca o agendamento antigo para liberar o slot anterior
-			const { rows: oldRows } = await pool.query(
-				`SELECT id, client_id, employee_id, service_id, appointment_date, appointment_time, status, notes, duration_minutes, price FROM appointments WHERE id = $1`,
-				[id]
-			);
-			if (oldRows.length === 0) {
-				await pool.query('ROLLBACK');
-				return res.status(404).json({ message: "Agendamento não encontrado" });
-			}
-			const old = oldRows[0];
+			let oldAppointment;
+			let updatedAppointment;
 
-			// Determina valores finais (mantém antigos se não enviados)
-			const final_date = appointment_date || old.appointment_date;
-			const final_time = appointment_time || old.appointment_time;
-			const final_client_id = client_id || old.client_id;
-			const final_employee_id = employee_id || old.employee_id;
-			const final_service_id = service_id || old.service_id;
-			const final_status = status || old.status;
-			const final_notes = typeof notes === 'undefined' ? old.notes : notes;
-
-			// Buscar dados do serviço para garantir duration/price
-			const serviceResult = await pool.query(
-				`SELECT duration_minutes, recommended_price FROM services WHERE id = $1`,
-				[final_service_id]
-			);
-			if (serviceResult.rows.length === 0) {
-				await pool.query('ROLLBACK');
-				return res.status(400).json({ message: "Serviço inválido" });
-			}
-			const { duration_minutes, recommended_price } = serviceResult.rows[0];
-
-			// Verificar se o funcionário está ativo (apenas se foi alterado)
-			if (employee_id && employee_id !== old.employee_id) {
-				const employeeResult = await pool.query(
-					`SELECT status FROM employees WHERE id = $1`,
-					[final_employee_id]
+			await withTransaction(db, async (client) => {
+				// Busca o agendamento antigo para liberar o slot anterior
+				const { rows: oldRows } = await client.query(
+					`SELECT id, client_id, employee_id, service_id, appointment_date, appointment_time, status, notes, notes_enc, duration_minutes, price FROM appointments WHERE id = $1`,
+					[id]
 				);
-				if (employeeResult.rows.length === 0) {
-					await pool.query('ROLLBACK');
-					return res.status(400).json({ message: "Funcionário não encontrado" });
+				if (oldRows.length === 0) {
+					const e = new Error('Agendamento não encontrado');
+					e.statusCode = 404;
+					throw e;
 				}
-				if (employeeResult.rows[0].status !== 'active') {
-					await pool.query('ROLLBACK');
-					return res.status(400).json({ message: "Não é possível agendar com funcionário inativo" });
+				oldAppointment = oldRows[0];
+				// Normaliza notes para compatibilidade (usa notes_enc como fonte principal)
+				oldAppointment.notes = oldAppointment.notes_enc ? decryptString(oldAppointment.notes_enc) : oldAppointment.notes;
+				delete oldAppointment.notes_enc;
+
+				// Determina valores finais (mantém antigos se não enviados)
+				const final_date = appointment_date || oldAppointment.appointment_date;
+				const final_time = appointment_time || oldAppointment.appointment_time;
+				const final_client_id = client_id || oldAppointment.client_id;
+				const final_employee_id = employee_id || oldAppointment.employee_id;
+				const final_service_id = service_id || oldAppointment.service_id;
+				const final_status = status || oldAppointment.status;
+				const final_notes = typeof notes === 'undefined' ? oldAppointment.notes : notes;
+				const normalizedNotes = normalizeText(final_notes);
+				const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
+
+				// Buscar dados do serviço para garantir duration/price
+				const serviceResult = await client.query(
+					`SELECT duration_minutes, recommended_price FROM services WHERE id = $1`,
+					[final_service_id]
+				);
+				if (serviceResult.rows.length === 0) {
+					const e = new Error('Serviço inválido');
+					e.statusCode = 400;
+					throw e;
 				}
-			}
+				const { duration_minutes, recommended_price } = serviceResult.rows[0];
 
-			// Impede conflito com outros agendamentos (exclui o próprio id)
-			const conflict = await pool.query(
-				`SELECT 1 FROM appointments
-				 WHERE employee_id = $1 AND appointment_date = $2 AND id <> $5
-				   AND NOT (
-				     (appointment_time + make_interval(mins => duration_minutes)) <= $3::time
-				     OR appointment_time >= ($3::time + make_interval(mins => $4))
-				   )
-				 LIMIT 1`,
-				[final_employee_id, final_date, final_time, duration_minutes, id]
-			);
-			if (conflict.rows.length) {
-				await pool.query('ROLLBACK');
-				return res.status(409).json({ message: 'Conflito de horário para este funcionário' });
-			}
+				// Verificar se o funcionário está ativo (apenas se foi alterado)
+				if (employee_id && employee_id !== oldAppointment.employee_id) {
+					const employeeResult = await client.query(
+						`SELECT status FROM employees WHERE id = $1`,
+						[final_employee_id]
+					);
+					if (employeeResult.rows.length === 0) {
+						const e = new Error('Funcionário não encontrado');
+						e.statusCode = 400;
+						throw e;
+					}
+					if (employeeResult.rows[0].status !== 'active') {
+						const e = new Error('Não é possível agendar com funcionário inativo');
+						e.statusCode = 400;
+						throw e;
+					}
+				}
 
-			// Recalcula comissão
-			let commission_amount = null;
-			const comm = await pool.query(
-				`SELECT commission_rate FROM employee_specialties WHERE employee_id = $1 AND service_id = $2 LIMIT 1`,
-				[final_employee_id, final_service_id]
-			);
-			if (comm.rows.length) {
-				commission_amount = (Number(recommended_price) * Number(comm.rows[0].commission_rate)) / 100.0;
-			}
+				// Impede conflito com outros agendamentos (exclui o próprio id)
+				const conflict = await client.query(
+					`SELECT 1 FROM appointments
+					 WHERE employee_id = $1 AND appointment_date = $2 AND id <> $5
+					   AND NOT (
+					     (appointment_time + make_interval(mins => duration_minutes)) <= $3::time
+					     OR appointment_time >= ($3::time + make_interval(mins => $4))
+					   )
+					 LIMIT 1`,
+					[final_employee_id, final_date, final_time, duration_minutes, id]
+				);
+				if (conflict.rows.length) {
+					const e = new Error('Conflito de horário para este funcionário');
+					e.statusCode = 409;
+					throw e;
+				}
 
-			// Atualiza o agendamento
-			const { rows } = await pool.query(
-				`
-					UPDATE appointments
-					SET appointment_date = $1,
-						appointment_time = $2,
-						client_id = $3,
-						employee_id = $4,
-						service_id = $5,
-						status = $6,
-						notes = $7,
-						duration_minutes = $9,
-						price = $10,
-						commission_amount = $11
-					WHERE id = $8
-					RETURNING *
-				`,
-				[
-					final_date,
-					final_time,
-					final_client_id,
-					final_employee_id,
-					final_service_id,
-					final_status,
-					final_notes,
-					id,
-					duration_minutes,
-					recommended_price,
-					commission_amount
-				]
-			);
+				// Recalcula comissão
+				let commission_amount = null;
+				const comm = await client.query(
+					`SELECT commission_rate FROM employee_specialties WHERE employee_id = $1 AND service_id = $2 LIMIT 1`,
+					[final_employee_id, final_service_id]
+				);
+				if (comm.rows.length) {
+					commission_amount = (Number(recommended_price) * Number(comm.rows[0].commission_rate)) / 100.0;
+				}
 
-			// Libera o slot antigo
-			await pool.query(
-				`UPDATE time_slots SET is_available = TRUE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
-				[old.employee_id, old.appointment_date, old.appointment_time]
-			);
-			// Ocupa o novo slot
-			await pool.query(
-				`UPDATE time_slots SET is_available = FALSE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
-				[final_employee_id, final_date, final_time]
-			);
+				// Atualiza o agendamento
+				const { rows } = await client.query(
+					`
+						UPDATE appointments
+						SET appointment_date = $1,
+							appointment_time = $2,
+							client_id = $3,
+							employee_id = $4,
+							service_id = $5,
+							status = $6,
+							notes = NULL,
+							notes_enc = $7,
+							duration_minutes = $9,
+							price = $10,
+							commission_amount = $11
+						WHERE id = $8
+						RETURNING *
+					`,
+					[
+						final_date,
+						final_time,
+						final_client_id,
+						final_employee_id,
+						final_service_id,
+						final_status,
+						notesEnc,
+						id,
+						duration_minutes,
+						recommended_price,
+						commission_amount
+					]
+				);
+				updatedAppointment = rows[0];
 
-			await pool.query('COMMIT');
+				// Libera o slot antigo
+				await client.query(
+					`UPDATE time_slots SET is_available = TRUE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
+					[oldAppointment.employee_id, oldAppointment.appointment_date, oldAppointment.appointment_time]
+				);
+				// Ocupa o novo slot
+				await client.query(
+					`UPDATE time_slots SET is_available = FALSE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
+					[updatedAppointment.employee_id, updatedAppointment.appointment_date, updatedAppointment.appointment_time]
+				);
+			});
 			
 			// Enviar notificações de alteração de agendamento
 			try {
 				// Verificar se houve mudanças significativas que merecem notificação
-				const oldAppointment = oldRows[0];
-				const newAppointment = rows[0];
+				const newAppointment = updatedAppointment;
 				const changes = [];
 				
 				if (oldAppointment.appointment_date !== newAppointment.appointment_date) {
@@ -647,14 +780,14 @@ class SchedulingController {
 				// Se houve mudanças significativas, enviar notificação
 				if (changes.length > 0) {
 					// Buscar dados completos para notificação
-					const appointmentDetails = await pool.query(`
+					const appointmentDetails = await db.query(`
 						SELECT 
 							a.*,
 							c.name as client_name,
-							c.phone as client_phone,
+							c.phone_enc as client_phone_enc,
 							e.id as employee_id,
 							e.name as employee_name,
-							e.phone as employee_phone,
+							e.phone_enc as employee_phone_enc,
 							s.name as service_name,
 							s.recommended_price as service_price
 						FROM appointments a
@@ -665,7 +798,7 @@ class SchedulingController {
 					`, [id]);
 					
 					if (appointmentDetails.rows.length > 0) {
-						const appointment = appointmentDetails.rows[0];
+						const appointment = decryptPhones(appointmentDetails.rows[0]);
 						
 						// Notificar funcionário sobre mudanças
 						if (appointment.employee_phone) {
@@ -686,6 +819,44 @@ class SchedulingController {
 							const clientMessage = whatsappService.createClientAppointmentUpdate(appointment, changes);
 							await whatsappService.sendMessage(appointment.client_phone, clientMessage);
 						}
+
+						// Notificação in-app/push para o cliente (best-effort)
+						try {
+							const statusChanged = changes.some((c) => c.field === 'Status');
+							const normalizedStatus = String(appointment.status || '').toLowerCase();
+							let type = 'appointment_updated';
+							let title = 'Agendamento atualizado';
+							let body = 'Seu agendamento foi atualizado pela equipe.';
+
+							if (statusChanged && ['confirmed', 'completed', 'canceled'].includes(normalizedStatus)) {
+								if (normalizedStatus === 'confirmed') {
+									type = 'appointment_confirmed';
+									title = 'Agendamento confirmado';
+									body = 'Seu agendamento foi confirmado.';
+								} else if (normalizedStatus === 'completed') {
+									type = 'appointment_completed';
+									title = 'Agendamento concluído';
+									body = 'Seu atendimento foi marcado como concluído.';
+								} else if (normalizedStatus === 'canceled') {
+									type = 'appointment_canceled';
+									title = 'Agendamento cancelado';
+									body = 'Seu agendamento foi cancelado pela equipe.';
+								}
+							}
+
+							await createClientNotification(db, {
+								clientId: appointment.client_id,
+								type,
+								title,
+								body,
+								data: {
+									appointment_id: appointment.id,
+									changes,
+								},
+							});
+						} catch (notifErr) {
+							console.warn('Scheduling update client notification warning:', notifErr?.message || notifErr);
+						}
 					}
 				}
 			} catch (notificationError) {
@@ -693,65 +864,70 @@ class SchedulingController {
 				// Não falha a atualização se a notificação falhar
 			}
 			
-			res.json(rows[0]);
+			sseManager.broadcast('appointments:changed', { action: 'updated', id: Number(id) });
+			res.json(decryptPhones(updatedAppointment));
 		} catch (err) {
-			await pool.query('ROLLBACK').catch(() => {});
-			res
-				.status(500)
-				.json({ message: "Erro ao atualizar agendamento", error: err.message });
+			if (err?.statusCode) {
+				return res.status(err.statusCode).json({ message: err.message });
+			}
+			console.error('Erro ao atualizar agendamento:', err);
+			return res.status(500).json({
+				message: 'Erro ao atualizar agendamento',
+				...buildErrorResponse(err),
+			});
 		}
 	}
 
 	// delete scheduling
 	async deleteScheduling(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { id } = req.params;
 		try {
-			await pool.query('BEGIN');
-			
-			// Buscar dados completos do agendamento antes de deletar para notificações
-			const { rows: appointmentRows } = await pool.query(`
-				SELECT 
-					a.*,
-					c.name as client_name,
-					c.phone as client_phone,
-					e.id as employee_id,
-					e.name as employee_name,
-					e.phone as employee_phone,
-					s.name as service_name,
-					s.recommended_price as service_price
-				FROM appointments a
-				JOIN clients c ON c.id = a.client_id
-				JOIN employees e ON e.id = a.employee_id
-				JOIN services s ON s.id = a.service_id
-				WHERE a.id = $1
-			`, [id]);
-			
-			if (appointmentRows.length === 0) {
-				await pool.query('ROLLBACK');
-				return res.status(404).json({ message: "Agendamento não encontrado" });
-			}
-			
-			const appointmentData = appointmentRows[0];
-			const old = appointmentRows[0];
+			let appointmentData;
+			await withTransaction(db, async (client) => {
+				// Buscar dados completos do agendamento antes de deletar para notificações
+				const { rows: appointmentRows } = await client.query(`
+					SELECT 
+						a.*,
+						c.name as client_name,
+						c.phone_enc as client_phone_enc,
+						e.id as employee_id,
+						e.name as employee_name,
+						e.phone_enc as employee_phone_enc,
+						s.name as service_name,
+						s.recommended_price as service_price
+					FROM appointments a
+					JOIN clients c ON c.id = a.client_id
+					JOIN employees e ON e.id = a.employee_id
+					JOIN services s ON s.id = a.service_id
+					WHERE a.id = $1
+				`, [id]);
 
-			// Deleta o agendamento
-			const { rowCount } = await pool.query(
-				`DELETE FROM appointments WHERE id = $1`,
-				[id]
-			);
-			if (rowCount === 0) {
-				await pool.query('ROLLBACK');
-				return res.status(404).json({ message: "Agendamento não encontrado" });
-			}
+				if (appointmentRows.length === 0) {
+					const e = new Error('Agendamento não encontrado');
+					e.statusCode = 404;
+					throw e;
+				}
 
-			// Libera o slot
-			await pool.query(
-				`UPDATE time_slots SET is_available = TRUE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
-				[old.employee_id, old.appointment_date, old.appointment_time]
-			);
+				appointmentData = decryptPhones(appointmentRows[0]);
 
-			await pool.query('COMMIT');
+				// Deleta o agendamento
+				const { rowCount } = await client.query(
+					`DELETE FROM appointments WHERE id = $1`,
+					[id]
+				);
+				if (rowCount === 0) {
+					const e = new Error('Agendamento não encontrado');
+					e.statusCode = 404;
+					throw e;
+				}
+
+				// Libera o slot
+				await client.query(
+					`UPDATE time_slots SET is_available = TRUE WHERE employee_id = $1 AND date = $2 AND start_time = $3`,
+					[appointmentData.employee_id, appointmentData.appointment_date, appointmentData.appointment_time]
+				);
+			});
 			
 			// Enviar notificações de cancelamento
 			try {
@@ -776,23 +952,41 @@ class SchedulingController {
 					);
 					await whatsappService.sendMessage(appointmentData.client_phone, clientMessage);
 				}
+
+				// Notificação in-app/push para o cliente (best-effort)
+				try {
+					await createClientNotification(db, {
+						clientId: appointmentData?.client_id,
+						type: 'appointment_canceled',
+						title: 'Agendamento cancelado',
+						body: 'Seu agendamento foi cancelado pela equipe.',
+						data: { appointment_id: Number(id) || id, source: 'staff_delete' },
+					});
+				} catch (notifErr) {
+					console.warn('Scheduling delete client notification warning:', notifErr?.message || notifErr);
+				}
 			} catch (notificationError) {
 				console.error('Erro ao enviar notificação de cancelamento:', notificationError);
 				// Não falha o cancelamento se a notificação falhar
 			}
 			
+			sseManager.broadcast('appointments:changed', { action: 'deleted', id: Number(id) });
 			res.status(204).send();
 		} catch (err) {
-			await pool.query('ROLLBACK').catch(() => {});
-			res
-				.status(500)
-				.json({ message: "Erro ao deletar agendamento", error: err.message });
+			if (err?.statusCode) {
+				return res.status(err.statusCode).json({ message: err.message });
+			}
+			console.error('Erro ao deletar agendamento:', err);
+			return res.status(500).json({
+				message: 'Erro ao deletar agendamento',
+				...buildErrorResponse(err),
+			});
 		}
 	}
 
 	// get available time slots for a given date and employee
 	async getAvailableTimeSlots(req, res) {
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { employeeId, date } = req.params;
 		const { serviceId, excludeAppointmentId } = req.query;
 		
@@ -800,7 +994,7 @@ class SchedulingController {
 			// Buscar duração do serviço se fornecido
 			let serviceDuration = 30; // padrão
 			if (serviceId) {
-				const serviceResult = await pool.query(
+				const serviceResult = await db.query(
 					`SELECT duration_minutes FROM services WHERE id = $1`,
 					[serviceId]
 				);
@@ -822,7 +1016,7 @@ class SchedulingController {
 				queryParams.push(excludeAppointmentId);
 			}
 
-			const { rows: existingAppointments } = await pool.query(existingQuery, queryParams);
+			const { rows: existingAppointments } = await db.query(existingQuery, queryParams);
 
 			// Gerar slots de 30 minutos das 08:00 às 18:00
 			const slots = [];
@@ -831,11 +1025,11 @@ class SchedulingController {
 					const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 					
 					// Calcular se o serviço cabe neste slot
-					const slotStartMinutes = this.timeToMinutes(timeStr);
+					const slotStartMinutes = timeToMinutes(timeStr);
 					const serviceEndMinutes = slotStartMinutes + serviceDuration;
 					
 					// Verificar se o serviço se estende além do horário de funcionamento (18:00)
-					if (serviceEndMinutes > this.timeToMinutes('18:00')) {
+					if (serviceEndMinutes > timeToMinutes('18:00')) {
 						continue; // Não adicionar este slot se o serviço não cabe
 					}
 					
@@ -843,7 +1037,7 @@ class SchedulingController {
 					const hasConflict = existingAppointments.some(apt => {
 						if (!apt.appointment_time) return false;
 						
-						const aptStartMinutes = this.timeToMinutes(apt.appointment_time.slice(0, 5));
+						const aptStartMinutes = timeToMinutes(apt.appointment_time.slice(0, 5));
 						const aptEndMinutes = aptStartMinutes + (apt.duration_minutes || 30);
 						
 						// Verifica sobreposição entre o novo serviço e o agendamento existente
@@ -869,55 +1063,58 @@ class SchedulingController {
 
 			res.json(slots);
 		} catch (err) {
-			res
-				.status(500)
-				.json({
-					message: "Erro ao buscar horários disponíveis",
-					error: err.message,
-				});
+			console.error('Erro ao buscar horários disponíveis:', err);
+			res.status(500).json({
+				message: "Erro ao buscar horários disponíveis",
+				...buildErrorResponse(err),
+			});
 		}
 	}
 
-	// Método auxiliar para converter horário em minutos
-	timeToMinutes(timeStr) {
-		const [hours, minutes] = timeStr.split(':').map(Number);
-		return hours * 60 + minutes;
-	}
-
 	async transitionStatus(req,res,newStatus){
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { id } = req.params;
 		// Permite detalhes de pagamento ao completar
 		const { payment_method, amount, notes } = req.body || {};
 		try {
-			await pool.query('BEGIN');
-			// Busca o agendamento atual
-			const current = await pool.query(`SELECT id, client_id, employee_id, status, price FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
-			if(!current.rows.length){
-				await pool.query('ROLLBACK');
-				return res.status(404).json({message:'Agendamento não encontrado'});
-			}
-			const appt = current.rows[0];
-			// Atualiza status
-			const updated = await pool.query(`UPDATE appointments SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,[id,newStatus]);
-			// Ajusta métricas básicas de cliente quando completa ou cancela
-			if(appt.status !== 'completed' && newStatus === 'completed'){
-				await pool.query(`UPDATE clients SET total_visits = total_visits + 1, total_spent = total_spent + $2, last_visit = CURRENT_DATE WHERE id = $1`,[appt.client_id, appt.price]);
-				// Registrar pagamento do serviço, se método fornecido (ou default)
-				const method = (payment_method || '').toLowerCase().trim();
-				const allowed = ['cash','credit','debit','pix','transfer','boleto'];
-				const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : 'cash');
-				const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
-				await pool.query(
-					`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes) VALUES ($1,$2,$3,$4)`,
-					[id, paidAmount, chosenMethod, notes || null]
-				);
-			}
-			if(appt.status === 'completed' && newStatus === 'canceled'){
-				// Reverte visita/gasto se estava marcado como completed antes
-				await pool.query(`UPDATE clients SET total_visits = GREATEST(total_visits - 1,0), total_spent = GREATEST(total_spent - $2,0) WHERE id = $1`,[appt.client_id, appt.price]);
-			}
-			await pool.query('COMMIT');
+			let targetClientId;
+			const updated = await withTransaction(db, async (client) => {
+				// Busca o agendamento atual
+				const current = await client.query(`SELECT id, client_id, employee_id, status, price, payment_status FROM appointments WHERE id = $1 FOR UPDATE`,[id]);
+				if(!current.rows.length){
+					const e = new Error('Agendamento não encontrado');
+					e.statusCode = 404;
+					throw e;
+				}
+				const appt = current.rows[0];
+				targetClientId = appt.client_id;
+				// Atualiza status
+				const updated = await client.query(`UPDATE appointments SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,[id,newStatus]);
+				// Ajusta métricas básicas de cliente quando completa ou cancela
+				if(appt.status !== 'completed' && newStatus === 'completed'){
+					await client.query(`UPDATE clients SET total_visits = total_visits + 1, total_spent = total_spent + $2, last_visit = CURRENT_DATE WHERE id = $1`,[appt.client_id, appt.price]);
+					// Registrar pagamento do serviço (idempotente por appointment_id)
+					const existingPay = await client.query(`SELECT 1 FROM appointment_payments WHERE appointment_id = $1 LIMIT 1`, [id]);
+					if (!existingPay.rows.length) {
+						const method = (payment_method || '').toLowerCase().trim();
+						const allowed = ['cash','credit','debit','pix','transfer','boleto'];
+						const fallback = String(appt.payment_status || '').toLowerCase() === 'paid' ? 'pix' : 'cash';
+						const chosenMethod = allowed.includes(method) ? method : (method ? 'other' : fallback);
+						const paidAmount = (typeof amount === 'number' && amount > 0) ? amount : Number(appt.price || 0);
+						const normalizedNotes = normalizeText(notes);
+						const notesEnc = normalizedNotes ? encryptString(normalizedNotes) : null;
+						await client.query(
+							`INSERT INTO appointment_payments (appointment_id, amount, payment_method, notes, notes_enc) VALUES ($1,$2,$3,NULL,$4)`,
+							[id, paidAmount, chosenMethod, notesEnc]
+						);
+					}
+				}
+				if(appt.status === 'completed' && newStatus === 'canceled'){
+					// Reverte visita/gasto se estava marcado como completed antes
+					await client.query(`UPDATE clients SET total_visits = GREATEST(total_visits - 1,0), total_spent = GREATEST(total_spent - $2,0) WHERE id = $1`,[appt.client_id, appt.price]);
+				}
+				return updated;
+			});
 			
 			// Enviar notificações WhatsApp para mudança de status
 			try {
@@ -932,22 +1129,59 @@ class SchedulingController {
 				console.error('Erro ao enviar notificação de mudança de status:', notificationError);
 				// Não falha a atualização se a notificação falhar
 			}
+
+			// Notificação in-app/push para o cliente (best-effort)
+			try {
+				const normalizedStatus = String(newStatus || '').toLowerCase();
+				let type = 'appointment_status_updated';
+				let title = 'Status do agendamento';
+				let body = `Status atualizado para ${normalizedStatus || 'atualizado'}.`;
+				if (normalizedStatus === 'confirmed') {
+					type = 'appointment_confirmed';
+					title = 'Agendamento confirmado';
+					body = 'Seu agendamento foi confirmado.';
+				} else if (normalizedStatus === 'completed') {
+					type = 'appointment_completed';
+					title = 'Agendamento concluído';
+					body = 'Seu atendimento foi marcado como concluído.';
+				} else if (normalizedStatus === 'canceled') {
+					type = 'appointment_canceled';
+					title = 'Agendamento cancelado';
+					body = 'Seu agendamento foi cancelado pela equipe.';
+				}
+
+				await createClientNotification(db, {
+					clientId: targetClientId,
+					type,
+					title,
+					body,
+					data: { appointment_id: Number(id) || id, status: normalizedStatus },
+				});
+			} catch (notifErr) {
+				console.warn('Scheduling transitionStatus client notification warning:', notifErr?.message || notifErr);
+			}
 			
+			sseManager.broadcast('appointments:changed', { action: newStatus, id: Number(id) });
 			res.json(updated.rows[0]);
 		}catch(err){
-			await pool.query('ROLLBACK').catch(()=>{});
-			res.status(500).json({message:'Erro ao atualizar status', error: err.message});
+			if (err?.statusCode) {
+				return res.status(err.statusCode).json({ message: err.message });
+			}
+			console.error('Erro ao atualizar status:', err);
+			return res.status(500).json({
+				message: 'Erro ao atualizar status',
+				...buildErrorResponse(err),
+			});
 		}
 	}
 
 	async generateTimeSlots(req,res){
-		const pool = req.pool;
+		const db = req.pool || pool;
 		const { employee_ids, start_date, end_date, start_time='08:00', end_time='18:00', interval_minutes=30 } = req.body;
 		if(!employee_ids || !Array.isArray(employee_ids) || !start_date || !end_date){
 			return res.status(400).json({message:'Parâmetros inválidos'});
 		}
 		try {
-			await pool.query('BEGIN');
 			const days = [];
 			for(let d = new Date(start_date); d <= new Date(end_date); d.setDate(d.getDate()+1)){
 				const y = d.getFullYear();
@@ -955,25 +1189,32 @@ class SchedulingController {
 				const day = String(d.getDate()).padStart(2,'0');
 				days.push(`${y}-${m}-${day}`);
 			}
-			for(const emp of employee_ids){
-				for(const day of days){
-					// gera intervalos
-					let cur = start_time;
-					while(true){
-						const [h,m] = cur.split(':').map(Number);
-						const next = new Date(0,0,0,h,m+interval_minutes,0);
-						const nextStr = `${String(next.getHours()).padStart(2,'0')}:${String(next.getMinutes()).padStart(2,'0')}`;
-						if(nextStr > end_time) break;
-						await pool.query(`INSERT INTO time_slots (employee_id, date, start_time, end_time, is_available) VALUES ($1,$2,$3,$4,TRUE) ON CONFLICT (employee_id,date,start_time) DO NOTHING`,[emp,day,cur,nextStr]);
-						cur = nextStr;
+			await withTransaction(db, async (client) => {
+				for(const emp of employee_ids){
+					for(const day of days){
+						// gera intervalos
+						let cur = start_time;
+						while(true){
+							const [h,m] = cur.split(':').map(Number);
+							const next = new Date(0,0,0,h,m+interval_minutes,0);
+							const nextStr = `${String(next.getHours()).padStart(2,'0')}:${String(next.getMinutes()).padStart(2,'0')}`;
+							if(nextStr > end_time) break;
+							await client.query(`INSERT INTO time_slots (employee_id, date, start_time, end_time, is_available) VALUES ($1,$2,$3,$4,TRUE) ON CONFLICT (employee_id,date,start_time) DO NOTHING`,[emp,day,cur,nextStr]);
+							cur = nextStr;
+						}
 					}
 				}
-			}
-			await pool.query('COMMIT');
+			});
 			res.json({message:'Time slots gerados', employees: employee_ids.length, dias: days.length});
 		}catch(err){
-			await pool.query('ROLLBACK').catch(()=>{});
-			res.status(500).json({message:'Erro ao gerar time slots', error: err.message});
+			if (err?.statusCode) {
+				return res.status(err.statusCode).json({ message: err.message });
+			}
+			console.error('Erro ao gerar time slots:', err);
+			return res.status(500).json({
+				message: 'Erro ao gerar time slots',
+				...buildErrorResponse(err),
+			});
 		}
 	}
 }

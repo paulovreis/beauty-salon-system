@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { axiosWithAuth } from "./api/axiosWithAuth.js";
 import {
   Card,
@@ -31,12 +31,12 @@ import { Textarea } from "./ui/textarea";
 import { Plus, Edit, Trash2, Calculator } from "lucide-react";
 import { getCurrentUserRole } from "../lib/auth";
 import { useAlert } from "../hooks/useAlert";
+import { useSSE } from "../hooks/useSSE";
 import { AlertDisplay } from "./AlertDisplay";
 
 export default function ServicesProducts() {
   const role = getCurrentUserRole();
   const { alert, showSuccess, showError, clearAlert } = useAlert();
-  const baseUrl = "http://localhost:5000"; // Base URL for API requests
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -49,7 +49,6 @@ export default function ServicesProducts() {
     duration_minutes: "",
     description: "",
   });
-  const [recommendedPrice, setRecommendedPrice] = useState("");
 
   const [products, setProducts] = useState([]);
   const [newProduct, setNewProduct] = useState({
@@ -72,12 +71,6 @@ export default function ServicesProducts() {
   const [newCategory, setNewCategory] = useState({ name: "", description: "" });
   // Estado para aba ativa (deve vir antes de qualquer uso)
   const [activeTab, setActiveTab] = useState("services");
-
-  // Estados para deletar
-  const [showDeleteServiceDialog, setShowDeleteServiceDialog] = useState(false);
-  const [serviceToDelete, setServiceToDelete] = useState(null);
-  const [showDeleteProductDialog, setShowDeleteProductDialog] = useState(false);
-  const [productToDelete, setProductToDelete] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showEditProductDialog, setShowEditProductDialog] = useState(false);
 
@@ -88,7 +81,7 @@ export default function ServicesProducts() {
   // Se desejar cálculo automático de selling_price, pode-se adicionar lógica aqui
 
   // Buscar produtos do backend
-  async function fetchProducts() {
+  const fetchProducts = useCallback(async () => {
     setLoading(true);
     clearAlert();
     try {
@@ -103,10 +96,10 @@ export default function ServicesProducts() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [clearAlert, showError]);
 
   // Buscar categorias de produtos do backend
-  async function fetchProductCategories() {
+  const fetchProductCategories = useCallback(async () => {
     try {
       const res = await axiosWithAuth("/products/categories", {
         method: "get",
@@ -117,45 +110,43 @@ export default function ServicesProducts() {
       showError(e);
       setProductCategories([]); // Definir como array vazio em caso de erro
     }
-  }
+  }, [showError]);
 
   // Buscar produtos e categorias ao abrir aba products
   useEffect(() => {
     if (activeTab === "products") {
       fetchProducts();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, fetchProducts]);
 
   // Buscar categorias de produtos ao montar o componente (garante que sempre existam para o select)
   useEffect(() => {
     fetchProductCategories();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchProductCategories]);
 
-  useEffect(() => {
-    fetchServices();
-    fetchCategories();
-  }, []);
+  const recommendedPrice = useMemo(() => {
+    const baseCost = Number(newService.base_cost);
+    const profitMargin = Number(newService.profit_margin);
 
-  // Atualiza o preço recomendado sempre que base_cost ou profit_margin mudarem
-  useEffect(() => {
-    async function fetchPrice() {
-      if (newService.base_cost && newService.profit_margin) {
-        const price = await calculateRecommendedPrice(
-          Number(newService.base_cost),
-          Number(newService.profit_margin)
-        );
-        setRecommendedPrice(price);
-      } else {
-        setRecommendedPrice("");
-      }
-    }
-    fetchPrice();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!Number.isFinite(baseCost) || !Number.isFinite(profitMargin)) return "";
+    if (baseCost <= 0) return "";
+    if (profitMargin < 0 || profitMargin >= 100) return "";
+
+    const price = baseCost / (1 - profitMargin / 100);
+    if (!Number.isFinite(price)) return "";
+    return Number(price.toFixed(2));
   }, [newService.base_cost, newService.profit_margin]);
 
-  async function fetchServices() {
+  const calculateRecommendedPrice = useCallback((baseCost, profitMargin) => {
+    if (!Number.isFinite(baseCost) || !Number.isFinite(profitMargin)) return null;
+    if (baseCost <= 0) return null;
+    if (profitMargin < 0 || profitMargin >= 100) return null;
+    const price = baseCost / (1 - profitMargin / 100);
+    if (!Number.isFinite(price)) return null;
+    return Number(price.toFixed(2));
+  }, []);
+
+  const fetchServices = useCallback(async () => {
     setLoading(true);
     clearAlert();
     try {
@@ -168,9 +159,9 @@ export default function ServicesProducts() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [clearAlert, showError]);
 
-  async function fetchCategories() {
+  const fetchCategories = useCallback(async () => {
     try {
       const res = await axiosWithAuth("/services/categories", {
         method: "get",
@@ -181,23 +172,17 @@ export default function ServicesProducts() {
       showError(e);
       setCategories([]); // Definir como array vazio em caso de erro
     }
-  }
+  }, [showError]);
 
-  async function calculateRecommendedPrice(base_cost, profit_margin) {
-    try {
-      const res = await axiosWithAuth("/services/calculate-price", {
-        method: "post",
-        data: {
-          base_cost: Number(base_cost),
-          profit_margin: Number(profit_margin),
-        },
-      });
-      return res.data.price;
-    } catch (e) {
-      showError(e);
-      return "";
-    }
-  }
+  useEffect(() => {
+    fetchServices();
+    fetchCategories();
+  }, [fetchServices, fetchCategories]);
+
+  useSSE({
+    'services:changed': fetchServices,
+    'categories:changed': () => { fetchCategories(); fetchServices(); },
+  });
 
   async function handleAddService() {
     clearAlert();
@@ -210,20 +195,25 @@ export default function ServicesProducts() {
       showError("Preencha todos os campos obrigatórios!");
       return;
     }
+
+    const baseCost = Number(newService.base_cost);
+    const profitMargin = Number(newService.profit_margin);
+    const recommended_price = calculateRecommendedPrice(baseCost, profitMargin);
+    if (recommended_price === null) {
+      showError("Verifique custo base e margem de lucro (0 a 99.9%)");
+      return;
+    }
+
     setLoading(true);
     try {
-      const recommended_price = await calculateRecommendedPrice(
-        newService.base_cost,
-        newService.profit_margin
-      );
       await axiosWithAuth("/services/", {
         method: "post",
         data: {
           name: newService.name,
           category_id: Number(newService.category_id),
-          base_cost: Number(newService.base_cost),
-          profit_margin: Number(newService.profit_margin),
-          recommended_price: Number(recommended_price),
+          base_cost: baseCost,
+          profit_margin: profitMargin,
+          recommended_price,
           duration_minutes: Number(newService.duration_minutes),
           description: newService.description,
         },
@@ -245,24 +235,6 @@ export default function ServicesProducts() {
     }
   }
 
-  // Abrir modal de edição
-  function handleEditService(service) {
-    // Tenta obter o category_id pelo nome da categoria
-    let categoryId = service.category_id;
-    if (!categoryId && (service.category || service.category_name)) {
-      const found = categories.find(
-        (cat) =>
-          cat.name === service.category || cat.name === service.category_name
-      );
-      if (found) categoryId = found.id;
-    }
-    setEditingService({
-      ...service,
-      category_id: categoryId ? String(categoryId) : "",
-    });
-    setShowEditServiceDialog(true);
-  }
-
   // // Salvar edição
   // async function handleSaveEditService() {
   //   if (
@@ -276,7 +248,6 @@ export default function ServicesProducts() {
   //   }
   //   setLoading(true);
   //   try {
-  //     console.log('Editing service data before save:', editingService);
   //     // Calcula preço recomendado atualizado
   //     const recommended_price = await calculateRecommendedPrice(
   //       editingService.base_cost,
@@ -366,6 +337,7 @@ export default function ServicesProducts() {
   }
 
   async function handleAddCategory() {
+    clearAlert();
     if (!newCategory.name) return;
     if (activeTab === "services") {
       try {
@@ -377,7 +349,7 @@ export default function ServicesProducts() {
         setShowCategoryDialog(false);
         fetchCategories();
       } catch (e) {
-        alert(e.response?.data?.message || e.message);
+        showError(e.response?.data?.message || e.message);
       }
     }else{
       try {
@@ -389,16 +361,13 @@ export default function ServicesProducts() {
         setShowCategoryDialog(false);
         fetchProductCategories();
       } catch (e) {
-        alert(e.response?.data?.message || e.message);
+        showError(e.response?.data?.message || e.message);
       }
     }
   }
 
   // Service edit and delete handlers
   function handleEditServiceClick(service) {
-    console.log('Service data:', service);
-    console.log('Categories available:', categories);
-    
     // Se o serviço tem category_name mas não category_id, vamos buscar o ID pela categoria
     let categoryId = service.category_id;
     if (!categoryId && service.category_name) {
@@ -417,24 +386,22 @@ export default function ServicesProducts() {
       recommended_price = (baseCost / (1 - (profitMargin / 100))).toFixed(2);
     }
 
-    const editData = {
+    setEditingService({
       id: service.id,
       name: service.name || '',
       description: service.description || '',
-      base_cost: service.base_cost || '',
-      recommended_price: recommended_price,
-      profit_margin: service.profit_margin || '',
-      duration: service.duration_minutes || '',
-      category_id: categoryId || ''
-    };
-    
-    console.log('Edit data being set:', editData);
-    setEditingService(editData);
+      base_cost: service.base_cost ?? '',
+      recommended_price,
+      profit_margin: service.profit_margin ?? '',
+      duration: service.duration_minutes ?? '',
+      category_id: categoryId ? String(categoryId) : '',
+    });
     setShowEditServiceDialog(true);
   }
 
   async function handleSaveEditService() {
-    if (!editingService.name || !editingService.category_id || !editingService.base_cost || !editingService.profit_margin || !editingService.duration) return;
+    clearAlert();
+    if (!editingService?.name || !editingService?.category_id || !editingService?.base_cost || !editingService?.profit_margin || !editingService?.duration) return;
 
     try {
       setLoading(true);
@@ -442,7 +409,11 @@ export default function ServicesProducts() {
       // Recalcular o preço recomendado com os valores atualizados
       const baseCost = parseFloat(editingService.base_cost) || 0;
       const profitMargin = parseFloat(editingService.profit_margin) || 0;
-      const recommended_price = baseCost / (1 - (profitMargin / 100));
+      const recommended_price = calculateRecommendedPrice(baseCost, profitMargin);
+      if (recommended_price === null) {
+        showError("Verifique custo base e margem de lucro (0 a 99.9%)");
+        return;
+      }
       
       await axiosWithAuth(`/services/${editingService.id}`, {
         method: "put",
@@ -450,18 +421,18 @@ export default function ServicesProducts() {
           name: editingService.name,
           description: editingService.description || null,
           base_cost: baseCost,
-          recommended_price: parseFloat(recommended_price.toFixed(2)),
+          recommended_price,
           duration_minutes: parseInt(editingService.duration) || 0,
           profit_margin: profitMargin,
-          category_id: parseInt(editingService.category_id),
+          category_id: parseInt(editingService.category_id, 10),
           is_active: true
         }
       });
       setShowEditServiceDialog(false);
-      setEditingService({});
+      setEditingService(null);
       fetchServices();
     } catch (e) {
-      alert(e.response?.data?.message || e.message);
+      showError(e.response?.data?.message || e.message);
     } finally {
       setLoading(false);
     }
@@ -470,13 +441,14 @@ export default function ServicesProducts() {
   async function handleDeleteService(serviceId) {
     if (window.confirm("Tem certeza que deseja excluir este serviço?")) {
       try {
+        clearAlert();
         setLoading(true);
         await axiosWithAuth(`/services/${serviceId}`, {
           method: "delete"
         });
         fetchServices();
       } catch (e) {
-        alert(e.response?.data?.message || e.message);
+        showError(e.response?.data?.message || e.message);
       } finally {
         setLoading(false);
       }
@@ -485,9 +457,6 @@ export default function ServicesProducts() {
 
   // Product edit and delete handlers
   function handleEditProductClick(product) {
-    console.log('Product data:', product);
-    console.log('Product categories available:', productCategories);
-    
     // Se o produto tem category_name mas não category_id, vamos buscar o ID pela categoria
     let categoryId = product.category_id;
     if (!categoryId && product.category_name) {
@@ -504,16 +473,16 @@ export default function ServicesProducts() {
       description: product.description || '',
       price: product.price || product.selling_price || '',
       quantity_in_stock: product.quantity_in_stock || product.current_stock || '',
-      category_id: categoryId || ''
+      category_id: categoryId ? String(categoryId) : ''
     };
     
-    console.log('Product edit data being set:', editData);
     setEditingProduct(editData);
     setShowEditProductDialog(true);
   }
 
   async function handleSaveEditProduct() {
-    if (!editingProduct.name || !editingProduct.category_id || !editingProduct.price) return;
+    clearAlert();
+    if (!editingProduct?.name || !editingProduct?.category_id || !editingProduct?.price) return;
     
     try {
       setLoading(true);
@@ -539,10 +508,10 @@ export default function ServicesProducts() {
         data: payload
       });
       setShowEditProductDialog(false);
-      setEditingProduct({});
+      setEditingProduct(null);
       fetchProducts();
     } catch (e) {
-      alert(e.response?.data?.message || e.message);
+      showError(e.response?.data?.message || e.message);
     } finally {
       setLoading(false);
     }
@@ -551,13 +520,14 @@ export default function ServicesProducts() {
   async function handleDeleteProduct(productId) {
     if (window.confirm("Tem certeza que deseja excluir este produto?")) {
       try {
+        clearAlert();
         setLoading(true);
         await axiosWithAuth(`/products/${productId}`, {
           method: "delete"
         });
         fetchProducts();
       } catch (e) {
-        alert(e.response?.data?.message || e.message);
+        showError(e.response?.data?.message || e.message);
       } finally {
         setLoading(false);
       }
@@ -668,7 +638,7 @@ export default function ServicesProducts() {
                       </SelectTrigger>
                       <SelectContent>
                         {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
+                          <SelectItem key={category.id} value={String(category.id)}>
                             {category.name}
                           </SelectItem>
                         ))}
@@ -1137,7 +1107,7 @@ export default function ServicesProducts() {
               <Select
                 value={editingService?.category_id ? editingService.category_id.toString() : ""}
                 onValueChange={(value) =>
-                  setEditingService({ ...editingService, category_id: parseInt(value) })
+                  setEditingService({ ...editingService, category_id: value })
                 }
               >
                 <SelectTrigger>
@@ -1254,7 +1224,7 @@ export default function ServicesProducts() {
               <Select
                 value={editingProduct?.category_id ? editingProduct.category_id.toString() : ""}
                 onValueChange={(value) =>
-                  setEditingProduct({ ...editingProduct, category_id: parseInt(value) })
+                  setEditingProduct({ ...editingProduct, category_id: value })
                 }
               >
                 <SelectTrigger>

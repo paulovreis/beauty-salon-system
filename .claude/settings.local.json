@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.mercadopago.com.br)",
+      "WebFetch(domain:developers.mercadopago.com)",
+      "WebFetch(domain:auth.mercadopago.com)",
+      "WebSearch",
+      "WebFetch(domain:beta.mercadopago.com.br)",
+      "WebFetch(domain:www.mercadopago.com.co)",
+      "WebFetch(domain:www.mercadopago.com.mx)",
+      "WebFetch(domain:www.mercadopago.com.ar)",
+      "WebFetch(domain:omega.mercadopago.com.br)",
+      "WebFetch(domain:www.mercadopago.com.uy)",
+      "WebFetch(domain:www.mercadopago.cl)",
+      "WebFetch(domain:beta.mercadopago.com.ar)"
+    ]
+  }
+}

@@ -2,7 +2,9 @@
 import express from "express";
 import authenticateJWT from "../middlewares/authenticateJWT.js";
 import roleMiddleware from "../middlewares/roleMiddleware.js";
+import paginationMiddleware from "../middlewares/paginationMiddleware.js";
 import SchedulingController from "../controllers/schedulingController.js";
+import AppointmentPixPaymentController from "../controllers/appointmentPixPaymentController.js";
 import {
 	validateCreateScheduling,
 	validateGetAllSchedulings,
@@ -20,8 +22,27 @@ router.get(
 	"/",
 	authenticateJWT,
 	roleMiddleware(["owner", "manager", "employee"]),
+	paginationMiddleware(),
 	validateGetAllSchedulings,
 	(req, res) => SchedulingController.getAllSchedulings(req, res)
+);
+
+// get next 5 schedulings
+router.get(
+	"/next/5",
+	authenticateJWT,
+	roleMiddleware(["owner", "manager", "employee"]),
+	validateGetAllSchedulings,
+	(req, res) => SchedulingController.getNextFiveSchedulings(req, res)
+);
+
+// paginated upcoming (limit, offset via query)
+router.get(
+  "/upcoming",
+  authenticateJWT,
+  roleMiddleware(["owner","manager","employee"]),
+  paginationMiddleware({ defaultLimit: 10 }),
+  (req,res)=> SchedulingController.getUpcomingPaginated(req,res)
 );
 
 // get scheduling by id
@@ -40,23 +61,6 @@ router.get(
 	roleMiddleware(["owner", "manager", "employee"]),
 	validateGetSchedulingByDate,
 	(req, res) => SchedulingController.getSchedulingsByDate(req, res)
-);
-
-// get next 5 schedulings
-router.get(
-	"/next/5",
-	authenticateJWT,
-	roleMiddleware(["owner", "manager", "employee"]),
-	validateGetAllSchedulings,
-	(req, res) => SchedulingController.getNextFiveSchedulings(req, res)
-);
-
-// paginated upcoming (limit, offset via query)
-router.get(
-  "/upcoming",
-  authenticateJWT,
-  roleMiddleware(["owner","manager","employee"]),
-  (req,res)=> SchedulingController.getUpcomingPaginated(req,res)
 );
 
 // get schedulings by employee
@@ -131,6 +135,39 @@ router.post(
 	authenticateJWT,
 	roleMiddleware(["owner","manager","employee"]),
 	(req,res)=> SchedulingController.transitionStatus(req,res,'canceled')
+);
+
+// PIX payments (Mercado Pago)
+router.get(
+	'/:id/payments/pix/latest',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.getLatestPix(req, res)
+);
+
+router.post(
+	'/:id/payments/pix',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.createPix(req, res)
+);
+
+router.post(
+	'/:id/payments/pix/resend',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.resendPix(req, res)
+);
+
+router.post(
+	'/:id/payments/approve',
+	authenticateJWT,
+	roleMiddleware(['owner', 'manager', 'employee']),
+	validateGetSchedulingById,
+	(req, res) => AppointmentPixPaymentController.manualApprove(req, res)
 );
 
 // generate time slots for range

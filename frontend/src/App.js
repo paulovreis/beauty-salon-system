@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
-import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus, UserCheck, MessageCircle, Settings } from "lucide-react";
+import { BarChart3, Users, Scissors, Package, Calendar, TrendingUp, DollarSign, PackageMinus, UserCheck, MessageCircle, Settings, QrCode } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import ServicesProducts from "./components/ServicesProducts";
 import Employees from "./components/Employees";
@@ -12,9 +12,14 @@ import Expenses from "./components/Expenses";
 import Clients from "./components/Clients";
 import WhatsApp from "./components/WhatsApp";
 import NotificationSettings from "./components/NotificationSettings";
+import MobileConnectionQr from "./components/MobileConnectionQr";
 import "./App.css";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+import { forceHttpsWhenPageIsHttps } from "./utils/forceHttpsWhenPageIsHttps";
+
+const API_URL = forceHttpsWhenPageIsHttps(
+	process.env.REACT_APP_API_URL || "http://localhost:5000"
+);
 
 async function refreshToken() {
 	const token = localStorage.getItem("token");
@@ -500,8 +505,14 @@ function App() {
 	useEffect(() => {
 		const urlParams = new URLSearchParams(window.location.search);
 		const token = urlParams.get("token");
+		const mpConnected = urlParams.get("mp_connected");
 		if (token) {
 			setShowResetPassword(true);
+		}
+		if (mpConnected === "1") {
+			// Remove the query param from the URL without reloading
+			window.history.replaceState({}, document.title, window.location.pathname);
+			setActiveTab("scheduling");
 		}
 	}, []);
 
@@ -513,6 +524,7 @@ function App() {
 		{ id: "services", name: "Serviços", icon: Scissors, component: ServicesProducts, allowedRoles: ["owner", "manager", "employee"] },
 		{ id: "employees", name: "Funcionários", icon: Users, component: Employees, allowedRoles: ["owner", "manager", "employee"] },
 		{ id: "clients", name: "Clientes", icon: UserCheck, component: Clients, allowedRoles: ["owner", "manager", "employee"] },
+		{ id: "mobile-qr", name: "App Mobile", icon: QrCode, component: MobileConnectionQr, allowedRoles: ["owner", "manager", "employee"] },
 		{ id: "whatsapp", name: "WhatsApp", icon: MessageCircle, component: WhatsApp, allowedRoles: ["owner", "manager"] },
 		{ id: "notifications", name: "Notificações", icon: Settings, component: NotificationSettings, allowedRoles: ["owner", "manager"] },
 		{ id: "inventory", name: "Estoque", icon: Package, component: Inventory, allowedRoles: ["owner", "manager", "employee"] },

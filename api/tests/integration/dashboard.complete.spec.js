@@ -110,4 +110,15 @@ describe('Dashboard complete statistics', () => {
     expect(res.status).toBe(200);
     expect(res.data).toBeDefined();
   });
+
+  it('gets mobile connection QR (employee)', async () => {
+    const res = await axios.get(`${API}/dashboard/mobile-connection-qr`, employeeHeader);
+    expect(res.status).toBe(200);
+    expect(res.data.baseUrl).toBeDefined();
+    expect(res.data.payload).toBeDefined();
+    expect(res.data.qr).toBeDefined();
+    expect(res.data.qr.format).toBe('svg');
+    expect(typeof res.data.qr.svg).toBe('string');
+    expect(res.data.qr.svg).toContain('<svg');
+  });
 });

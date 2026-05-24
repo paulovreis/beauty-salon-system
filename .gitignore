@@ -5,6 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 package-lock.json
 yarn.lock
+.claude/
 
 # Logs
 logs
@@ -38,3 +39,6 @@ coverage/
 *.swp
 *.bak
 *.tmp
+
+MOBILE_API.md
+.claude/settings.local.json

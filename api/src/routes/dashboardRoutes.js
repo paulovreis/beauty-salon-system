@@ -31,4 +31,7 @@ router.get('/predictive-analysis', authenticateJWT, roleMiddleware(['owner', 'ma
 // Rota para relatório completo (para geração de PDF)
 router.get('/complete-report', authenticateJWT, roleMiddleware(['owner', 'manager']), dashboardController.getCompleteReport);
 
+// Rota para exibir QR de conexão do app mobile (staff)
+router.get('/mobile-connection-qr', authenticateJWT, roleMiddleware(['owner', 'manager', 'employee']), dashboardController.getMobileConnectionQr);
+
 export default router;

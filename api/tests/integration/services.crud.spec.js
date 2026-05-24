@@ -12,6 +12,7 @@ describe('Services CRUD operations', () => {
   const employeeHeader = { headers: { Authorization: `Bearer ${makeToken({ role: 'employee' })}` } };
   let categoryId;
   let serviceId;
+  const createdClientIds = [];
 
   beforeAll(async () => {
     const cat = await ensureServiceCategory(pool, { name: 'Cabelo', description: 'Serviços de cabelo' });
@@ -24,7 +25,9 @@ describe('Services CRUD operations', () => {
       await pool.query('DELETE FROM appointments WHERE service_id IN (SELECT id FROM services WHERE category_id = $1)', [categoryId]);
       await pool.query('DELETE FROM services WHERE category_id = $1', [categoryId]);
       await pool.query('DELETE FROM employees WHERE email LIKE $1', ['%@test.com']);
-      await pool.query('DELETE FROM clients WHERE phone LIKE $1', ['119%']);
+      if (createdClientIds.length) {
+        await pool.query('DELETE FROM clients WHERE id = ANY($1::int[])', [createdClientIds]);
+      }
       await pool.query('DELETE FROM service_categories WHERE id = $1', [categoryId]);
     } catch {}
     await pool.end();
@@ -92,7 +95,7 @@ describe('Services CRUD operations', () => {
     const unique = Date.now();
     const { rows } = await pool.query(
       `INSERT INTO employees (name, email, phone, status) VALUES ($1, $2, $3, $4) RETURNING id`,
-      ['João Especialista', `joao${unique}@test.com`, '11999999999', 'active']
+      ['João Especialista', `joao${unique}@test.com`, '11111111111', 'active']
     );
     const employeeId = rows[0].id;
 
@@ -114,12 +117,13 @@ describe('Services CRUD operations', () => {
     // Create client and employee
     const client = await pool.query(
       `INSERT INTO clients (name, phone) VALUES ($1, $2) RETURNING id`,
-      ['Cliente Teste', '11988888888']
+      ['Cliente Teste', '11111111111']
     );
+    createdClientIds.push(client.rows[0].id);
     const unique = Date.now();
     const emp = await pool.query(
       `INSERT INTO employees (name, email, phone, status) VALUES ($1, $2, $3, $4) RETURNING id`,
-      ['Funcionário Teste', `func${unique}@test.com`, '11977777777', 'active']
+      ['Funcionário Teste', `func${unique}@test.com`, '11111111111', 'active']
     );
 
     // Create appointment

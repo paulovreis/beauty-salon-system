@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -31,8 +31,11 @@ import { axiosWithAuth } from "./api/axiosWithAuth.js";
 import { getCurrentUserRole, getCurrentUserId } from "../lib/auth";
 import { useAlert } from "../hooks/useAlert";
 import { AlertDisplay } from "./AlertDisplay";
+import { forceHttpsWhenPageIsHttps } from "../utils/forceHttpsWhenPageIsHttps";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const API_URL = forceHttpsWhenPageIsHttps(
+  process.env.REACT_APP_API_URL || "http://localhost:5000"
+);
 
 export default function Employees() {
   const role = getCurrentUserRole();
@@ -54,6 +57,23 @@ export default function Employees() {
   // Estado para edição
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null); // { ...employee, specialties: [{service_id, commission_rate, id}] }
+
+  const serviceById = useMemo(() => {
+    const map = new Map();
+    (services || []).forEach((s) => map.set(Number(s.id), s));
+    return map;
+  }, [services]);
+
+  const visibleEmployees = useMemo(() => {
+    if (role !== 'employee') return employees;
+    const currentUserId = getCurrentUserId();
+    return employees.filter((e) => (e.user_id ? e.user_id === currentUserId : false));
+  }, [role, employees]);
+
+  const totalCommissions = useMemo(
+    () => employees.reduce((sum, emp) => sum + (emp.monthlyStats?.totalCommission ?? 0), 0),
+    [employees]
+  );
 
   // Abre modal de edição e carrega especialidades do funcionário
   const handleEditClick = async (employee) => {
@@ -440,7 +460,7 @@ export default function Employees() {
                 {newEmployee.specialties.length > 0 && (
                   <div className="space-y-2">
                     {newEmployee.specialties.map((spec) => {
-                      const service = services.find((s) => s.id === spec.service_id);
+                      const service = serviceById.get(Number(spec.service_id));
                       return (
                         <div
                           key={spec.service_id}
@@ -474,7 +494,7 @@ export default function Employees() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {(role === 'employee' ? employees.filter(e => e.user_id ? e.user_id === getCurrentUserId() : false) : employees).map((employee) => (
+        {visibleEmployees.map((employee) => (
           <Card key={employee.id}>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -533,7 +553,7 @@ export default function Employees() {
                 <h4 className="font-medium mb-2">Especialidades & Taxas</h4>
                 <div className="space-y-1">
                   {(employee.specialties || []).map((spec) => {
-                    const service = services.find((s) => s.id === (spec.service_id || spec));
+                    const service = serviceById.get(Number(spec.service_id || spec));
                     const commission = spec.commission_rate || (employee.commissionRates?.[spec] ?? 0);
                     return (
                       <div
@@ -686,9 +706,7 @@ export default function Employees() {
                           {editingEmployee.specialties.length > 0 && (
                             <div className="space-y-2">
                               {editingEmployee.specialties.map((spec) => {
-                                const service = services.find(
-                                  (s) => s.id === spec.service_id
-                                );
+                                const service = serviceById.get(Number(spec.service_id));
                                 return (
                                   <div
                                     key={spec.service_id}
@@ -798,11 +816,7 @@ export default function Employees() {
                 <span>Total de Comissões:</span>
                 <span className="text-lg">
                   R$
-                  {employees.reduce(
-                    (sum, emp) =>
-                      sum + (emp.monthlyStats?.totalCommission ?? 0),
-                    0
-                  )}
+                  {totalCommissions}
                 </span>
               </div>
             </div>

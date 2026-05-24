@@ -1,14 +1,37 @@
 import pool from "../db/postgre.js";
 import whatsappService from "../services/whatsappNotificationService.js";
+import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString, encryptString, normalizeText } from '../utils/fieldCrypto.js';
+
+function decryptProductRows(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('supplier_contact_enc' in out) {
+      out.supplier_contact = out.supplier_contact_enc ? decryptString(out.supplier_contact_enc) : out.supplier_contact;
+      delete out.supplier_contact_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class ProductController {
   constructor() {}
 
   async getAllProducts(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     try {
-      const { page = 1, limit = 50, category_id, search, include_inactive } = req.query;
-      const offset = (page - 1) * limit;
+      const { category_id, search, include_inactive } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = [];
       let queryParams = [];
@@ -37,7 +60,7 @@ class ProductController {
       const { rows } = await db.query(`
         SELECT 
           p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+          p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
           p.last_restocked, p.is_active, p.created_at, p.updated_at,
           c.name as category_name,
           CASE 
@@ -67,30 +90,28 @@ class ProductController {
       `, queryParams);
 
       res.json({
-        products: rows,
+        products: decryptProductRows(rows),
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
-      console.log("Erro ao buscar produtos:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar produtos", error: err.message });
+      console.error("Erro ao buscar produtos:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos", ...buildErrorResponse(err) });
     }
   }
 
   async getProductById(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rows } = await db.query(
         `
                 SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+               p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
                        p.last_restocked, p.is_active, p.created_at, p.updated_at, 
                        c.name as category_name
                 FROM products p
@@ -102,17 +123,15 @@ class ProductController {
       if (rows.length === 0) {
         return res.status(404).json({ message: "Produto não encontrado" });
       }
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
-      console.log("Erro ao buscar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar produto", error: err.message });
+      console.error("Erro ao buscar produto:", err);
+      res.status(500).json({ message: "Erro ao buscar produto", ...buildErrorResponse(err) });
     }
   }
 
   async addNewProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const {
       name,
       description,
@@ -139,8 +158,8 @@ class ProductController {
       }
       const { rows } = await db.query(
         `
-                INSERT INTO products (name, description, sku, cost_price, selling_price, current_stock, min_stock_level, max_stock_level, supplier_name, supplier_contact, category_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *
+          INSERT INTO products (name, description, sku, cost_price, selling_price, current_stock, min_stock_level, max_stock_level, supplier_name, supplier_contact, supplier_contact_enc, category_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10, $11) RETURNING *
             `,
         [
           name,
@@ -152,7 +171,7 @@ class ProductController {
           min_stock_level,
           max_stock_level,
           supplier_name,
-          supplier_contact,
+          normalizeText(supplier_contact) ? encryptString(normalizeText(supplier_contact)) : null,
           category_id,
         ]
       );
@@ -174,17 +193,15 @@ class ProductController {
         console.error('Erro ao enviar notificação de novo produto:', notificationError);
       }
       
-      res.status(201).json(rows[0]);
+      res.status(201).json(decryptProductRows(rows[0]));
     } catch (err) {
-      console.log("Erro ao criar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao criar produto", error: err.message });
+      console.error("Erro ao criar produto:", err);
+      res.status(500).json({ message: "Erro ao criar produto", ...buildErrorResponse(err) });
     }
   }
 
   async updateProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     const {
       name,
@@ -221,6 +238,12 @@ class ProductController {
             .json({ message: "Já existe um produto com este nome" });
         }
       }
+      const currentRow = current.rows[0];
+      const finalSupplierContactPlain = supplier_contact !== undefined ? normalizeText(supplier_contact) : normalizeText(currentRow.supplier_contact);
+      const finalSupplierContactEnc = supplier_contact !== undefined
+        ? (finalSupplierContactPlain ? encryptString(finalSupplierContactPlain) : null)
+        : (currentRow.supplier_contact_enc || (finalSupplierContactPlain ? encryptString(finalSupplierContactPlain) : null));
+
       const updated = {
         name: name ?? current.rows[0].name,
         description: description ?? current.rows[0].description,
@@ -231,7 +254,7 @@ class ProductController {
         min_stock_level: min_stock_level ?? current.rows[0].min_stock_level,
         max_stock_level: max_stock_level ?? current.rows[0].max_stock_level,
         supplier_name: supplier_name ?? current.rows[0].supplier_name,
-        supplier_contact: supplier_contact ?? current.rows[0].supplier_contact,
+        supplier_contact_enc: finalSupplierContactEnc,
         category_id: category_id ?? current.rows[0].category_id,
         is_active:
           typeof is_active === "boolean"
@@ -243,7 +266,7 @@ class ProductController {
                 UPDATE products 
                 SET name = $1, description = $2, sku = $3, cost_price = $4, selling_price = $5, 
                     current_stock = $6, min_stock_level = $7, max_stock_level = $8, 
-                    supplier_name = $9, supplier_contact = $10, category_id = $11, is_active = $12, updated_at = NOW() 
+            supplier_name = $9, supplier_contact = NULL, supplier_contact_enc = $10, category_id = $11, is_active = $12, updated_at = NOW() 
                 WHERE id = $13 RETURNING *
             `,
         [
@@ -256,7 +279,7 @@ class ProductController {
           updated.min_stock_level,
           updated.max_stock_level,
           updated.supplier_name,
-          updated.supplier_contact,
+          updated.supplier_contact_enc,
           updated.category_id,
           updated.is_active,
           id,
@@ -291,17 +314,15 @@ class ProductController {
         }
       }
 
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
-      console.log("Erro ao atualizar produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar produto", error: err.message });
+      console.error("Erro ao atualizar produto:", err);
+      res.status(500).json({ message: "Erro ao atualizar produto", ...buildErrorResponse(err) });
     }
   }
 
   async deleteProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rowCount } = await db.query(
@@ -313,21 +334,19 @@ class ProductController {
       }
       res.json({ message: "Produto removido com sucesso" });
     } catch (err) {
-      console.log("Erro ao remover produto:", err);
-      res
-        .status(500)
-        .json({ message: "Erro ao remover produto", error: err.message });
+      console.error("Erro ao remover produto:", err);
+      res.status(500).json({ message: "Erro ao remover produto", ...buildErrorResponse(err) });
     }
   }
 
   async getProductsByCategory(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { categoryId } = req.params;
     try {
       const { rows } = await db.query(
         `
                 SELECT p.id, p.name, p.description, p.sku, p.cost_price, p.selling_price, 
-                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact, 
+                       p.current_stock, p.min_stock_level, p.max_stock_level, p.supplier_name, p.supplier_contact_enc, p.supplier_contact, 
                        p.last_restocked, p.is_active, p.created_at, p.updated_at, 
                        c.name as category_name
                 FROM products p
@@ -337,40 +356,31 @@ class ProductController {
             `,
         [categoryId]
       );
-      res.json(rows);
+      res.json(decryptProductRows(rows));
     } catch (err) {
-      console.log("Erro ao buscar produtos por categoria:", err);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar produtos por categoria",
-          error: err.message,
-        });
+      console.error("Erro ao buscar produtos por categoria:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos por categoria", ...buildErrorResponse(err) });
     }
     }
 
 
   // PRODUTOS COM BAIXO ESTOQUE
   async getLowStock(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     try {
       const { rows } = await db.query(
         "SELECT * FROM products WHERE current_stock <= min_stock_level ORDER BY current_stock ASC"
       );
-      res.json(rows);
+      res.json(decryptProductRows(rows));
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar produtos com baixo estoque",
-          error: err.message,
-        });
+      console.error("Erro ao buscar produtos com baixo estoque:", err);
+      res.status(500).json({ message: "Erro ao buscar produtos com baixo estoque", ...buildErrorResponse(err) });
     }
   }
 
   // REPOSIÇÃO DE ESTOQUE
   async restockProduct(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     const { quantity, unit_cost, notes } = req.body;
     try {
@@ -404,11 +414,10 @@ class ProductController {
         console.error('Erro ao enviar notificação de reposição:', notificationError);
       }
       
-      res.json(rows[0]);
+      res.json(decryptProductRows(rows[0]));
     } catch (err) {
-      res
-        .status(500)
-        .json({ message: "Erro ao repor estoque", error: err.message });
+      console.error("Erro ao repor estoque:", err);
+      res.status(500).json({ message: "Erro ao repor estoque", ...buildErrorResponse(err) });
     }
   }
 
@@ -430,7 +439,7 @@ class ProductController {
 
   // MOVIMENTAÇÕES DE ESTOQUE
   async getProductMovements(req, res) {
-    const db = req.pool;
+    const db = req.pool || pool;
     const { id } = req.params;
     try {
       const { rows } = await db.query(
@@ -439,12 +448,8 @@ class ProductController {
       );
       res.json(rows);
     } catch (err) {
-      res
-        .status(500)
-        .json({
-          message: "Erro ao buscar movimentações do produto",
-          error: err.message,
-        });
+      console.error("Erro ao buscar movimentações do produto:", err);
+      res.status(500).json({ message: "Erro ao buscar movimentações do produto", ...buildErrorResponse(err) });
     }
   }
 }

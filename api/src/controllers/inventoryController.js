@@ -1,15 +1,40 @@
 import pool from '../db/postgre.js';
+import buildErrorResponse from '../utils/errorResponse.js';
+import { decryptString, encryptString, normalizeText } from '../utils/fieldCrypto.js';
 
 // Permite usar req.pool (injetado via middleware) ou pool padrão
 const getPool = (req) => req.pool || pool;
+
+function decryptRegisteredByEmail(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+    if ('registered_by_email_enc' in out) {
+      out.registered_by_email = out.registered_by_email_enc
+        ? decryptString(out.registered_by_email_enc)
+        : out.registered_by_email;
+      delete out.registered_by_email_enc;
+    }
+    return out;
+  });
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class InventoryController {
   // GET /inventory - Otimizado com paginação e índices
   async list(req, res) {
     const db = getPool(req);
     try {
-      const { page = 1, limit = 50, category_id, low_stock_only } = req.query;
-      const offset = (page - 1) * limit;
+      const { category_id, low_stock_only } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = [];
       let queryParams = [];
@@ -80,15 +105,15 @@ class InventoryController {
       res.json({
         products: rows,
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
       console.error('Erro ao buscar inventário:', err);
-      res.status(500).json({ message: 'Erro ao buscar inventário', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar inventário', ...buildErrorResponse(err) });
     }
   }
 
@@ -101,7 +126,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar produtos com baixo estoque', error: err.message });
+      console.error('Erro ao buscar produtos com baixo estoque:', err);
+      res.status(500).json({ message: 'Erro ao buscar produtos com baixo estoque', ...buildErrorResponse(err) });
     }
   }
 
@@ -114,7 +140,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar movimentações', error: err.message });
+      console.error('Erro ao buscar movimentações:', err);
+      res.status(500).json({ message: 'Erro ao buscar movimentações', ...buildErrorResponse(err) });
     }
   }
 
@@ -168,7 +195,8 @@ class InventoryController {
 
       res.status(201).json(rows[0]);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao registrar movimentação', error: err.message });
+      console.error('Erro ao registrar movimentação:', err);
+      res.status(500).json({ message: 'Erro ao registrar movimentação', ...buildErrorResponse(err) });
     }
   }
 
@@ -187,7 +215,8 @@ class InventoryController {
       `);
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar sugestões de promoção', error: err.message });
+      console.error('Erro ao buscar sugestões de promoção:', err);
+      res.status(500).json({ message: 'Erro ao buscar sugestões de promoção', ...buildErrorResponse(err) });
     }
   }
 
@@ -202,7 +231,8 @@ class InventoryController {
       );
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ message: 'Erro ao buscar histórico do produto', error: err.message });
+      console.error('Erro ao buscar histórico do produto:', err);
+      res.status(500).json({ message: 'Erro ao buscar histórico do produto', ...buildErrorResponse(err) });
     }
   }
 
@@ -228,7 +258,8 @@ class InventoryController {
       res.json({ message: 'Atualização em lote realizada com sucesso' });
     } catch (err) {
       await client.query('ROLLBACK');
-      res.status(500).json({ message: 'Erro na atualização em lote', error: err.message });
+      console.error('Erro na atualização em lote:', err);
+      res.status(500).json({ message: 'Erro na atualização em lote', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -238,8 +269,14 @@ class InventoryController {
   async listOutputs(req, res) {
     const db = getPool(req);
     try {
-      const { page = 1, limit = 50, product_id, start_date, end_date, output_type } = req.query;
-      const offset = (page - 1) * limit;
+      const { product_id, start_date, end_date, output_type } = req.query;
+      const pagination = req.pagination || {
+        page: Number.parseInt(req.query.page, 10) || 1,
+        limit: Number.parseInt(req.query.limit, 10) || 50,
+      };
+      const page = pagination.page;
+      const limit = pagination.limit;
+      const offset = pagination.offset ?? (page - 1) * limit;
       
       let whereConditions = ["sm.movement_type = 'output'"];
       let queryParams = [];
@@ -278,6 +315,7 @@ class InventoryController {
           p.sku as product_sku,
           p.current_stock as current_product_stock,
           pc.name as category_name,
+          u.email_enc as registered_by_email_enc,
           u.email as registered_by_email
         FROM stock_movements sm
         INNER JOIN products p ON sm.product_id = p.id
@@ -295,17 +333,17 @@ class InventoryController {
       `, queryParams);
 
       res.json({
-        outputs: rows,
+        outputs: decryptRegisteredByEmail(rows),
         pagination: {
-          currentPage: parseInt(page),
+          currentPage: page,
           totalItems: parseInt(countRows[0].total),
-          itemsPerPage: parseInt(limit),
+          itemsPerPage: limit,
           totalPages: Math.ceil(countRows[0].total / limit)
         }
       });
     } catch (err) {
       console.error('Erro ao listar saídas:', err);
-      res.status(500).json({ message: 'Erro ao listar saídas', error: err.message });
+      res.status(500).json({ message: 'Erro ao listar saídas', ...buildErrorResponse(err) });
     }
   }
 
@@ -321,6 +359,7 @@ class InventoryController {
           p.sku as product_sku,
           p.current_stock as current_product_stock,
           pc.name as category_name,
+          u.email_enc as registered_by_email_enc,
           u.email as registered_by_email
         FROM stock_movements sm
         INNER JOIN products p ON sm.product_id = p.id
@@ -333,10 +372,10 @@ class InventoryController {
         return res.status(404).json({ message: 'Saída não encontrada' });
       }
 
-      res.json(rows[0]);
+      res.json(decryptRegisteredByEmail(rows[0]));
     } catch (err) {
       console.error('Erro ao buscar saída:', err);
-      res.status(500).json({ message: 'Erro ao buscar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao buscar saída', ...buildErrorResponse(err) });
     }
   }
 
@@ -421,6 +460,9 @@ class InventoryController {
           }
         }
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         // Inserir registro de venda
         const { rows: saleRows } = await client.query(`
           INSERT INTO sales (
@@ -432,8 +474,9 @@ class InventoryController {
             total_amount,
             payment_method,
             status,
-            notes
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            notes,
+            notes_enc
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
           RETURNING *
         `, [
           employeeId,
@@ -446,7 +489,7 @@ class InventoryController {
             ? String(req.body.payment_method).toLowerCase()
             : 'cash',
           'completed',
-          `Venda via saída de estoque - ${notes || ''}`
+          saleNotesEnc
         ]);
 
         const sale = saleRows[0];
@@ -487,7 +530,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao registrar saída:', err);
-      res.status(500).json({ message: 'Erro ao registrar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao registrar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -573,6 +616,9 @@ class InventoryController {
           }
         }
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || reason || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         const { rows: saleRows } = await client.query(`
           INSERT INTO sales (
             employee_id,
@@ -583,8 +629,9 @@ class InventoryController {
             total_amount,
             payment_method,
             status,
-            notes
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            notes,
+            notes_enc
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
           RETURNING *
         `, [
           employeeId,
@@ -595,7 +642,7 @@ class InventoryController {
           totalAmount,
           'cash',
           'completed',
-          `Venda via saída de estoque - ${notes || reason || ''}`
+          saleNotesEnc
         ]);
 
         const sale = saleRows[0];
@@ -624,11 +671,14 @@ class InventoryController {
         const subtotal = unitPrice * quantity;
         const totalAmount = subtotal;
 
+        const saleNotesPlain = normalizeText(`Venda via saída de estoque - ${notes || reason || ''}`);
+        const saleNotesEnc = saleNotesPlain ? encryptString(saleNotesPlain) : null;
+
         await client.query(`
           UPDATE sales 
-          SET subtotal = $1, total_amount = $2, notes = $3, updated_at = NOW()
+          SET subtotal = $1, total_amount = $2, notes = NULL, notes_enc = $3, updated_at = NOW()
           WHERE id = $4
-        `, [subtotal, totalAmount, `Venda via saída de estoque - ${notes || reason || ''}`, original.reference_id]);
+        `, [subtotal, totalAmount, saleNotesEnc, original.reference_id]);
 
         await client.query(`
           UPDATE sale_items 
@@ -659,7 +709,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao atualizar saída:', err);
-      res.status(500).json({ message: 'Erro ao atualizar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao atualizar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -718,7 +768,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao deletar saída:', err);
-      res.status(500).json({ message: 'Erro ao deletar saída', error: err.message });
+      res.status(500).json({ message: 'Erro ao deletar saída', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }
@@ -786,7 +836,7 @@ class InventoryController {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao reabastecer produto:', err);
-      res.status(500).json({ message: 'Erro ao reabastecer produto', error: err.message });
+      res.status(500).json({ message: 'Erro ao reabastecer produto', ...buildErrorResponse(err) });
     } finally {
       client.release();
     }

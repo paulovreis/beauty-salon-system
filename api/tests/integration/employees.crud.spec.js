@@ -108,7 +108,7 @@ describe('Employees CRUD operations', () => {
     // Create a completed appointment with commission
     const client = await pool.query(
       `INSERT INTO clients (name, phone) VALUES ($1, $2) RETURNING id`,
-      ['Cliente Teste', '11988887777']
+      ['Cliente Teste', '11111111111']
     );
     const service = await pool.query(
       `INSERT INTO services (category_id, name, base_cost, recommended_price, duration_minutes)

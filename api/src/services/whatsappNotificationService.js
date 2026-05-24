@@ -1,42 +1,180 @@
 import pool from '../db/postgre.js';
 import dotenv from 'dotenv';
+import { decryptString } from '../utils/fieldCrypto.js';
 dotenv.config();
+
+function formatDateBR(dateVal) {
+  if (!dateVal) return '';
+  try {
+    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
+    return `${d}/${m}/${y}`;
+  } catch { return ''; }
+}
+
+function formatDateLongBR(dateVal) {
+  if (!dateVal) return '';
+  try {
+    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
+    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return `${weekdays[date.getDay()]}, ${Number(d)} de ${months[Number(m) - 1]} de ${y}`;
+  } catch { return ''; }
+}
+
+function tryDecrypt(value) {
+  if (!value || typeof value !== 'string') return value;
+  try {
+    return decryptString(value);
+  } catch {
+    return value;
+  }
+}
+
+function decryptPhoneFields(rows) {
+  if (!rows) return rows;
+  const arr = Array.isArray(rows) ? rows : [rows];
+  const mapped = arr.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    const out = { ...r };
+
+    if ('notes_enc' in out) {
+      out.notes = out.notes_enc ? tryDecrypt(out.notes_enc) : tryDecrypt(out.notes);
+      delete out.notes_enc;
+    } else if ('notes' in out) {
+      out.notes = tryDecrypt(out.notes);
+    }
+
+    if ('client_phone_enc' in out) {
+      out.client_phone = out.client_phone_enc ? tryDecrypt(out.client_phone_enc) : tryDecrypt(out.client_phone);
+      delete out.client_phone_enc;
+    } else if ('client_phone' in out) {
+      out.client_phone = tryDecrypt(out.client_phone);
+    }
+
+    if ('employee_phone_enc' in out) {
+      out.employee_phone = out.employee_phone_enc ? tryDecrypt(out.employee_phone_enc) : tryDecrypt(out.employee_phone);
+      delete out.employee_phone_enc;
+    } else if ('employee_phone' in out) {
+      out.employee_phone = tryDecrypt(out.employee_phone);
+    }
+
+    if ('phone_enc' in out) {
+      out.phone = out.phone_enc ? tryDecrypt(out.phone_enc) : tryDecrypt(out.phone);
+      delete out.phone_enc;
+    } else if ('phone' in out) {
+      out.phone = tryDecrypt(out.phone);
+    }
+
+    return out;
+  });
+
+  return Array.isArray(rows) ? mapped : mapped[0];
+}
 
 class WhatsAppNotificationService {
   constructor() {
-    this.evolutionApiUrl = 'http://evolution-api:8080';
-    this.apiKey = process.env.EVOLUTION_API_KEY || '2f8c1e7b-4a6d-4e2a-9c3b-7e5d2a1f9b6e';
+    this.evolutionApiUrl = process.env.EVOLUTION_API_URL || 'http://evolution-api:8080';
+    this.apiKey = process.env.EVOLUTION_API_KEY;
     this.defaultInstance = 'main';
+
+    // Evolution API aplica CORS mesmo para chamadas server-to-server.
+    // Sem header Origin ela pode responder 500 "Not allowed by CORS".
+    this.requestOrigin =
+      process.env.EVOLUTION_REQUEST_ORIGIN ||
+      process.env.EVOLUTION_PUBLIC_ORIGIN ||
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_PUBLIC_ORIGIN ||
+      process.env.API_PUBLIC_ORIGIN ||
+      undefined;
+
+    if (!this.apiKey) {
+      console.warn('EVOLUTION_API_KEY não configurada; notificações WhatsApp podem falhar.');
+    }
+  }
+
+  async sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Método para fazer requisições à Evolution API
   async makeApiRequest(endpoint, method = 'GET', data = null) {
     const url = `${this.evolutionApiUrl}${endpoint}`;
-    const config = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': this.apiKey
-      }
+
+    if (!this.apiKey) {
+      throw new Error('EVOLUTION_API_KEY não configurada');
+    }
+
+    const headers = {
+      apikey: this.apiKey,
+      Accept: 'application/json',
     };
+
+    // Só define Content-Type quando há body.
+    if (data && method !== 'GET') {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    if (this.requestOrigin) {
+      headers.Origin = this.requestOrigin;
+    }
+
+    const config = { method, headers };
 
     if (data && method !== 'GET') {
       config.body = JSON.stringify(data);
     }
 
-    try {
-      const response = await fetch(url, config);
-      const responseData = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(responseData.message || `HTTP ${response.status}`);
+    const maxAttempts = Number.parseInt(process.env.EVOLUTION_API_RETRY_ATTEMPTS || '3', 10);
+    const baseDelayMs = Number.parseInt(process.env.EVOLUTION_API_RETRY_DELAY_MS || '400', 10);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(url, config);
+        const text = await response.text();
+
+        let responseData;
+        try {
+          responseData = text ? JSON.parse(text) : null;
+        } catch {
+          responseData = { message: text };
+        }
+
+        if (!response.ok) {
+          const msg = responseData?.message || responseData?.error || `HTTP ${response.status}`;
+          const err = new Error(String(msg));
+          err.status = response.status;
+          err.response = responseData;
+          throw err;
+        }
+
+        return responseData;
+      } catch (error) {
+        const code = error?.cause?.code || error?.code;
+        const isNetworkError =
+          code === 'ECONNREFUSED' ||
+          code === 'ECONNRESET' ||
+          code === 'ENOTFOUND' ||
+          code === 'ETIMEDOUT' ||
+          /fetch failed/i.test(String(error?.message));
+
+        const shouldRetry = isNetworkError && attempt < maxAttempts;
+        console.error('Evolution API Error:', {
+          url,
+          method,
+          attempt,
+          maxAttempts,
+          code,
+          message: error?.message,
+          status: error?.status,
+        });
+
+        if (!shouldRetry) throw error;
+        await this.sleep(baseDelayMs * attempt);
       }
-      
-      return responseData;
-    } catch (error) {
-      console.error('Evolution API Error:', error);
-      throw error;
     }
+
+    throw new Error('Evolution API request failed after retries');
   }
 
   // Obter instância ativa
@@ -61,9 +199,12 @@ class WhatsAppNotificationService {
   // Formatar número de telefone para WhatsApp (adicionar prefixo 55)
   formatPhoneNumber(phone) {
     if (!phone) return null;
+
+    const maybeDecryptedPhone = tryDecrypt(phone);
+    if (!maybeDecryptedPhone) return null;
     
     // Remove todos os caracteres não numéricos
-    const cleaned = phone.replace(/\D/g, '');
+    const cleaned = maybeDecryptedPhone.replace(/\D/g, '');
     
     // Se começar com 0, remove (código de área antigo)
     const withoutZero = cleaned.startsWith('0') ? cleaned.substring(1) : cleaned;
@@ -171,15 +312,15 @@ class WhatsAppNotificationService {
     let message = `🎉 *Novo Agendamento!*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (appointment.notes) {
       message += `📝 *Observações:* ${appointment.notes}\n`;
     }
-    
+
     message += `\n✅ Agendamento confirmado em seu nome!\n`;
     message += `📲 Prepare-se para atender mais este cliente! 💆‍♀️`;
     
@@ -190,15 +331,15 @@ class WhatsAppNotificationService {
   createCancelledAppointmentMessage(employee, appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (reason) {
       message += `📝 *Motivo:* ${reason}\n`;
     }
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?`;
     
@@ -210,11 +351,11 @@ class WhatsAppNotificationService {
     let message = `✅ *Agendamento Confirmado!*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name}\n`;
     message += `📱 *Telefone:* ${appointment.client_phone || 'Não informado'}\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     message += `\n🎯 Cliente confirmou presença!\n`;
     message += `💪 Prepare-se para um atendimento incrível! ✨`;
     
@@ -235,7 +376,7 @@ class WhatsAppNotificationService {
     });
     
     message += `📅 *Dados atuais:*\n`;
-    message += `🗓️ Data: ${new Date(newAppointment.appointment_date).toLocaleDateString('pt-BR')}\n`;
+    message += `🗓️ Data: ${formatDateBR(newAppointment.appointment_date)}\n`;
     message += `🕐 Horário: ${newAppointment.appointment_time}\n`;
     message += `✂️ Serviço: ${newAppointment.service_name}\n`;
     message += `💰 Valor: R$ ${parseFloat(newAppointment.service_price).toFixed(2)}\n`;
@@ -336,21 +477,16 @@ class WhatsAppNotificationService {
     
     message += `📋 *DETALHES DO AGENDAMENTO:*\n`;
     message += `═══════════════════════════\n`;
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 *Data:* ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
     message += `💰 *Valor:* R$ ${parseFloat(appointment.service_price).toFixed(2)}\n`;
-    
+
     if (appointment.notes) {
       message += `📝 *Observações:* ${appointment.notes}\n`;
     }
-    
+
     message += `\n📍 *${process.env.NOME_SALAO || 'Nosso Salão'}*\n`;
     message += `📱 Entre em contato conosco se precisar reagendar!\n\n`;
     message += `✨ *Estamos ansiosos para atendê-la!* ✨\n`;
@@ -375,12 +511,7 @@ class WhatsAppNotificationService {
     
     message += `📋 *DADOS ATUALIZADOS:*\n`;
     message += `═══════════════════════\n`;
-    message += `📅 Data: ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 Data: ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 Horário: ${appointment.appointment_time}\n`;
     message += `✂️ Serviço: ${appointment.service_name}\n`;
     message += `👨‍💼 Profissional: ${appointment.employee_name}\n`;
@@ -398,20 +529,15 @@ class WhatsAppNotificationService {
     message += `Olá, ${appointment.client_name}!\n`;
     message += `Infelizmente seu agendamento foi cancelado:\n\n`;
     
-    message += `📅 *Data:* ${new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric', 
-      month: 'long',
-      day: 'numeric'
-    })}\n`;
+    message += `📅 *Data:* ${formatDateLongBR(appointment.appointment_date)}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name}\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n`;
-    
+
     if (reason) {
       message += `📝 *Motivo:* ${reason}\n`;
     }
-    
+
     message += `\n💔 Sentimos muito pelo inconveniente.\n`;
     message += `📞 Entre em contato para reagendar: [seu telefone]\n`;
     message += `💖 Esperamos vê-lo(a) em breve!`;
@@ -423,14 +549,14 @@ class WhatsAppNotificationService {
   createSimpleCancellationMessage(appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date) || 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?\n\n`;
-    
+
     return message;
   }
 
@@ -439,8 +565,8 @@ class WhatsAppNotificationService {
     try {
       // Query mais simples para pegar dados básicos
       const basicQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone, 
-               e.name as employee_name, e.phone as employee_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone, 
+               e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone,
                s.name as service_name
         FROM appointments a
         LEFT JOIN clients c ON a.client_id = c.id
@@ -452,7 +578,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(basicQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário com dados básicos
       if (appointment.employee_phone) {
@@ -479,6 +605,7 @@ class WhatsAppNotificationService {
         SELECT 
           e.id,
           e.name,
+          e.phone_enc as phone_enc,
           e.phone,
           e.status,
           COALESCE(en.notification_types, '[]'::jsonb) as notification_types,
@@ -486,8 +613,8 @@ class WhatsAppNotificationService {
         FROM employees e
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active'
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -497,7 +624,7 @@ class WhatsAppNotificationService {
       
       const result = await pool.query(query, [JSON.stringify([notificationType])]);
       console.log(`Encontrados ${result.rows.length} funcionários para notificação '${notificationType}'`);
-      return result.rows;
+      return decryptPhoneFields(result.rows);
     } catch (error) {
       console.error('Erro ao buscar funcionários para notificação:', error);
       return [];
@@ -509,7 +636,7 @@ class WhatsAppNotificationService {
     try {
       console.log(`Buscando agendamentos para funcionário ${employeeId} na data: ${date}`);
       const query = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
@@ -530,7 +657,7 @@ class WhatsAppNotificationService {
           appointment_date: row.appointment_date
         })));
       }
-      return result.rows;
+      return decryptPhoneFields(result.rows);
     } catch (error) {
       console.error('Erro ao buscar agendamentos do dia:', error);
       return [];
@@ -586,9 +713,9 @@ class WhatsAppNotificationService {
   async sendNewAppointmentNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -599,7 +726,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -660,7 +787,7 @@ class WhatsAppNotificationService {
     try {
       // Buscar dados do funcionário
       const result = await pool.query(`
-        SELECT e.name, e.phone, en.enabled
+        SELECT e.name, e.phone_enc as phone_enc, e.phone, en.enabled
         FROM employees e
         LEFT JOIN employee_notifications en ON en.employee_id = e.id
         WHERE e.id = $1 AND e.status = 'active'
@@ -670,7 +797,7 @@ class WhatsAppNotificationService {
         throw new Error('Funcionário não encontrado');
       }
 
-      const employee = result.rows[0];
+      const employee = decryptPhoneFields(result.rows[0]);
 
       if (!employee.enabled) {
         throw new Error('Notificações desabilitadas para este funcionário');
@@ -704,12 +831,12 @@ class WhatsAppNotificationService {
       if (!targetEmployees) {
         // Buscar todos os funcionários ativos se não especificado
         const result = await pool.query(`
-          SELECT e.id, e.name, e.phone, COALESCE(u.role,'employee') AS role
+          SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone, COALESCE(u.role,'employee') AS role
           FROM employees e
           LEFT JOIN users u ON u.id = e.user_id
-          WHERE e.status = 'active' AND e.phone IS NOT NULL
+          WHERE e.status = 'active' AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
         `);
-        targetEmployees = result.rows;
+        targetEmployees = decryptPhoneFields(result.rows);
       }
 
       const notifications = [];
@@ -758,9 +885,9 @@ class WhatsAppNotificationService {
   async sendAppointmentConfirmationNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -771,7 +898,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -796,9 +923,9 @@ class WhatsAppNotificationService {
   async sendAppointmentCompletionNotification(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -809,7 +936,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -834,9 +961,9 @@ class WhatsAppNotificationService {
   async sendAppointmentCancellationNotification(appointmentId, reason = 'Cancelado pelo sistema') {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
-               e.id as employee_id, e.name as employee_name, e.phone as employee_phone
+               e.id as employee_id, e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN services s ON a.service_id = s.id
@@ -847,7 +974,7 @@ class WhatsAppNotificationService {
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário respeitando configurações
       if (appointment.employee_phone) {
@@ -874,11 +1001,9 @@ class WhatsAppNotificationService {
 
   // Templates de mensagens para confirmação
   createConfirmedAppointmentMessage(appointment, recipient) {
-    const date = new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo'
-    });
+    const date = formatDateBR(appointment.appointment_date);
     const time = appointment.appointment_time;
-    
+
     if (recipient === 'employee') {
       return `✅ *Agendamento Confirmado*
 
@@ -907,11 +1032,9 @@ Nos vemos em breve! 😊`;
 
   // Templates de mensagens para conclusão
   createCompletedAppointmentMessage(appointment, recipient) {
-    const date = new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo'
-    });
+    const date = formatDateBR(appointment.appointment_date);
     const time = appointment.appointment_time;
-    
+
     if (recipient === 'employee') {
       return `✅ *Serviço Concluído*
 
@@ -943,8 +1066,8 @@ Volte sempre! 😊✨`;
     try {
       // Query mais simples para pegar dados básicos
       const basicQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone, 
-               e.name as employee_name, e.phone as employee_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone, 
+               e.name as employee_name, e.phone_enc as employee_phone_enc, e.phone as employee_phone,
                s.name as service_name
         FROM appointments a
         LEFT JOIN clients c ON a.client_id = c.id
@@ -956,7 +1079,7 @@ Volte sempre! 😊✨`;
       const result = await pool.query(basicQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       // Notificar funcionário com dados básicos
       if (appointment.employee_phone) {
@@ -978,14 +1101,14 @@ Volte sempre! 😊✨`;
   createSimpleCancellationMessage(appointment, reason = '') {
     let message = `❌ *Agendamento Cancelado*\n\n`;
     message += `👤 *Cliente:* ${appointment.client_name || 'N/A'}\n`;
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR') : 'N/A'}\n`;
+    message += `📅 *Data:* ${formatDateBR(appointment.appointment_date) || 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     message += `📝 *Motivo:* ${reason}\n`;
-    
+
     message += `\n⚠️ Este horário agora está disponível na sua agenda.\n`;
     message += `💡 Que tal aproveitar para um tempo livre ou reagendar outro cliente?\n\n`;
-    
+
     return message;
   }
 
@@ -994,13 +1117,8 @@ Volte sempre! 😊✨`;
     let message = `😔 *Agendamento Cancelado*\n\n`;
     message += `Olá, ${appointment.client_name || 'Cliente'}!\n`;
     message += `Infelizmente seu agendamento foi cancelado:\n\n`;
-    
-    message += `📅 *Data:* ${appointment.appointment_date ? new Date(appointment.appointment_date).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      year: 'numeric', 
-      month: 'long',
-      day: 'numeric'
-    }) : 'N/A'}\n`;
+
+    message += `📅 *Data:* ${appointment.appointment_date ? formatDateLongBR(appointment.appointment_date) : 'N/A'}\n`;
     message += `🕐 *Horário:* ${appointment.appointment_time || 'N/A'}\n`;  
     message += `✂️ *Serviço:* ${appointment.service_name || 'N/A'}\n`;
     
@@ -1016,6 +1134,119 @@ Volte sempre! 😊✨`;
   }
 
   // ========================================
+  // NOTIFICAÇÕES DE PAGAMENTO PIX
+  // ========================================
+
+  createPixPaymentConfirmedClientMessage({ clientName, appointmentId, serviceName, employeeName, appointmentDate, appointmentTime, amount }) {
+    const salonName = (process.env.NOME_SALAO || 'Salão').trim();
+    const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let dateStr = '';
+    if (appointmentDate) {
+      try {
+        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
+        dateStr = `${d}/${m}/${y}`;
+      } catch { dateStr = ''; }
+    }
+
+    return [
+      `✅ *Pagamento Confirmado!*`,
+      '',
+      `Olá, *${clientName || 'Cliente'}*! 🎉`,
+      `Seu pagamento via PIX foi recebido com sucesso.`,
+      '',
+      `📋 *Comprovante - Agendamento #${appointmentId}*`,
+      `✂️ Serviço: ${serviceName || ''}`,
+      employeeName ? `👩 Profissional: ${employeeName}` : null,
+      (dateStr && appointmentTime) ? `📅 Data/hora: ${dateStr} às ${String(appointmentTime).slice(0, 5)}` : null,
+      `💰 Valor pago: *R$ ${value}*`,
+      '',
+      `💚 *${salonName}* — Obrigada pela preferência! Até logo! 😊`,
+    ].filter(l => l !== null).join('\n');
+  }
+
+  createPixPaymentConfirmedEmployeeMessage({ clientName, appointmentId, serviceName, appointmentDate, appointmentTime, amount }) {
+    const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let dateStr = '';
+    if (appointmentDate) {
+      try {
+        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
+        dateStr = `${d}/${m}/${y}`;
+      } catch { dateStr = ''; }
+    }
+
+    return [
+      `💰 *Pagamento PIX Recebido!*`,
+      '',
+      `👤 Cliente: *${clientName || ''}*`,
+      `✂️ Serviço: ${serviceName || ''}`,
+      (dateStr && appointmentTime) ? `📅 Data/hora: ${dateStr} às ${String(appointmentTime).slice(0, 5)}` : null,
+      `💵 Valor: *R$ ${value}*`,
+      `🔖 Agendamento: #${appointmentId}`,
+      '',
+      `✅ Pagamento confirmado automaticamente via Mercado Pago.`,
+    ].filter(l => l !== null).join('\n');
+  }
+
+  async sendPixPaymentConfirmedNotification({ db, appointmentId }) {
+    try {
+      const { rows } = await db.query(
+        `SELECT a.id, a.price, a.appointment_date, a.appointment_time,
+                c.name AS client_name, c.phone_enc AS client_phone_enc,
+                e.name AS employee_name, e.phone_enc AS employee_phone_enc,
+                s.name AS service_name
+         FROM appointments a
+         JOIN clients c ON c.id = a.client_id
+         JOIN employees e ON e.id = a.employee_id
+         JOIN services s ON s.id = a.service_id
+         WHERE a.id = $1`,
+        [appointmentId]
+      );
+      if (!rows.length) return;
+
+      const appt = decryptPhoneFields(rows[0]);
+
+      const clientPhone = appt.phone || appt.client_phone;
+      if (clientPhone) {
+        try {
+          const msg = this.createPixPaymentConfirmedClientMessage({
+            clientName: appt.client_name,
+            appointmentId,
+            serviceName: appt.service_name,
+            employeeName: appt.employee_name,
+            appointmentDate: appt.appointment_date,
+            appointmentTime: appt.appointment_time,
+            amount: appt.price,
+          });
+          await this.sendMessage(clientPhone, msg);
+        } catch (err) {
+          console.warn('sendPixPaymentConfirmedNotification: erro ao notificar cliente:', err?.message);
+        }
+      }
+
+      const employeePhone = appt.employee_phone;
+      if (employeePhone) {
+        try {
+          const msg = this.createPixPaymentConfirmedEmployeeMessage({
+            clientName: appt.client_name,
+            appointmentId,
+            serviceName: appt.service_name,
+            appointmentDate: appt.appointment_date,
+            appointmentTime: appt.appointment_time,
+            amount: appt.price,
+          });
+          await this.sendMessage(employeePhone, msg);
+        } catch (err) {
+          console.warn('sendPixPaymentConfirmedNotification: erro ao notificar profissional:', err?.message);
+        }
+      }
+    } catch (err) {
+      console.error('sendPixPaymentConfirmedNotification error:', err);
+    }
+  }
+
+  // ========================================
   // NOTIFICAÇÕES AVANÇADAS PARA GERENTES E DONOS
   // ========================================
 
@@ -1024,14 +1255,14 @@ Volte sempre! 😊✨`;
     try {
       // Buscar gerentes e donos
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON en.employee_id = e.id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1040,7 +1271,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0) {
         console.log('Nenhum gerente/dono encontrado para análise diária');
@@ -1174,14 +1405,14 @@ Volte sempre! 😊✨`;
     try {
       // Buscar gerentes e donos que devem receber notificações do sistema
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
-        AND e.phone != ''
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
+        AND (COALESCE(e.phone_enc, '') != '' OR COALESCE(e.phone, '') != '')
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1190,7 +1421,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0) {
         console.log('Nenhum gerente/dono configurado para receber notificações do sistema');
@@ -1414,13 +1645,13 @@ Volte sempre! 😊✨`;
   async sendLowStockNotification(products) {
     try {
       const managersQuery = `
-        SELECT e.id, e.name, e.phone
+        SELECT e.id, e.name, e.phone_enc as phone_enc, e.phone
         FROM employees e
         LEFT JOIN users u ON u.id = e.user_id
         LEFT JOIN employee_notifications en ON e.id = en.employee_id
         WHERE e.status = 'active' 
         AND COALESCE(u.role,'employee') IN ('owner', 'manager')
-        AND e.phone IS NOT NULL 
+        AND (e.phone_enc IS NOT NULL OR e.phone IS NOT NULL)
         AND COALESCE(en.enabled, true) = true
         AND (
           en.notification_types IS NULL 
@@ -1429,7 +1660,7 @@ Volte sempre! 😊✨`;
       `;
       
       const managersResult = await pool.query(managersQuery);
-      const managers = managersResult.rows;
+      const managers = decryptPhoneFields(managersResult.rows);
 
       if (managers.length === 0 || products.length === 0) return;
 
@@ -1516,7 +1747,7 @@ Volte sempre! 😊✨`;
   async sendAppointmentReminder(appointmentId) {
     try {
       const appointmentQuery = `
-        SELECT a.*, c.name as client_name, c.phone as client_phone,
+        SELECT a.*, c.name as client_name, c.phone_enc as client_phone_enc, c.phone as client_phone,
                s.name as service_name, a.price as service_price,
                e.name as employee_name
         FROM appointments a
@@ -1529,7 +1760,7 @@ Volte sempre! 😊✨`;
       const result = await pool.query(appointmentQuery, [appointmentId]);
       if (result.rows.length === 0) return;
       
-      const appointment = result.rows[0];
+      const appointment = decryptPhoneFields(result.rows[0]);
       
       if (appointment.client_phone) {
         const message = this.createAppointmentReminderMessage(appointment);

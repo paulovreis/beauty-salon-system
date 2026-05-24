@@ -6,13 +6,36 @@ services:
     image: postgres:16
     restart: always
     environment:
-      POSTGRES_DB: beauty_salon
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-beauty_salon}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./init-evolution-db.sql:/docker-entrypoint-initdb.d/01-init-evolution-db.sql:ro
+    networks:
+      - beauty-salon-net
+
+  # Garante o database "evolution" (para EvolutionAPI) mesmo quando o volume do Postgres já existe
+  db-bootstrap:
+    image: postgres:16
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      - db
+    command: >
+      sh -c "
+        until pg_isready -h db -U \"$$POSTGRES_USER\" -d postgres; do sleep 1; done;
+        exists=\"$$(psql -h db -U \"$$POSTGRES_USER\" -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='evolution'\")\";
+        if [ \"$$exists\" != \"1\" ]; then
+          echo 'Creating database evolution...';
+          createdb -h db -U \"$$POSTGRES_USER\" evolution;
+        else
+          echo 'Database evolution already exists.';
+        fi
+      "
     networks:
       - beauty-salon-net
 
@@ -24,18 +47,67 @@ services:
     command: redis-server --port 6379 --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     networks:
       - beauty-salon-net
 
   # API do sistema principal
   api:
     build: ./api
-    env_file:
-      - ./api/.env
+    environment:
+      PORT: 5000
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASS: ${DB_PASS:-postgres}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-beauty_salon}
+      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
+      INIT_DB: ${INIT_DB:-true}
+
+      # Field-level encryption (at-rest)
+      DATA_ENCRYPTION_ACTIVE_KID: ${DATA_ENCRYPTION_ACTIVE_KID}
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1}
+      DATA_ENCRYPTION_HMAC_KEY_V1: ${DATA_ENCRYPTION_HMAC_KEY_V1}
+
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      NOME_SALAO: ${NOME_SALAO:-Fada Madrinha}
+
+      # Evolution API (WhatsApp notifications)
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-http://evolution-api:8080}
+      EVOLUTION_PUBLIC_ORIGIN: ${EVOLUTION_PUBLIC_ORIGIN:-}
+      EVOLUTION_REQUEST_ORIGIN: ${EVOLUTION_REQUEST_ORIGIN:-}
+
+      # Public URL (used by /mobile/public/meta when configured)
+      API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:-}
+
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
+      FRONTEND_URL: "${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}"
+
+      # Mobile (multi-deploy identity + reset password deep link)
+      SALON_SLUG: ${SALON_SLUG:-}
+      SALON_CITY: ${SALON_CITY:-}
+      SALON_LOGO_URL: ${SALON_LOGO_URL:-}
+      MOBILE_RESET_URL: ${MOBILE_RESET_URL:-}
+
+      # Push (FCM)
+      PUSH_ENABLED: ${PUSH_ENABLED:-false}
+      FIREBASE_SERVICE_ACCOUNT_BASE64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+
+      # Mercado Pago (PIX / OAuth)
+      MP_CLIENT_ID: ${MP_CLIENT_ID:-}
+      MP_CLIENT_SECRET: ${MP_CLIENT_SECRET:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      MP_NOTIFICATION_URL: ${MP_NOTIFICATION_URL:-}
+      MP_OAUTH_REDIRECT_URI: ${MP_OAUTH_REDIRECT_URI:-}
+      MP_AUTH_BASE_URL: ${MP_AUTH_BASE_URL:-}
+      FRONTEND_OAUTH_REDIRECT_URL: ${FRONTEND_OAUTH_REDIRECT_URL:-}
     ports:
-      - "5000:5000"
+      - "${API_PORT_HOST:-15000}:5000"
     depends_on:
       - db
     networks:
@@ -46,9 +118,9 @@ services:
     image: postgres:16
     restart: always
     environment:
-      POSTGRES_DB: beauty_salon
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-beauty_salon}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - db_test_data:/var/lib/postgresql/data
     networks:
@@ -58,9 +130,11 @@ services:
   frontend:
     build: ./frontend
     environment:
-      REACT_APP_API_URL: http://localhost:5000
+      REACT_APP_API_URL: "${API_PUBLIC_ORIGIN:-http://localhost:${API_PORT_HOST:-15000}}"
+      REACT_APP_EVOLUTION_API_URL: "${EVOLUTION_PUBLIC_ORIGIN:-http://localhost:${EVOLUTION_PORT_HOST:-18080}}"
+      REACT_APP_EVOLUTION_API_KEY: ${REACT_APP_EVOLUTION_API_KEY}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT_HOST:-13000}:3000"
     depends_on:
       - api
     networks:
@@ -70,16 +144,39 @@ services:
   api-tests:
     build: ./api
     environment:
-      DB_USER: postgres
-      DB_PASS: postgres
+      NODE_ENV: test
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASS: ${DB_PASS:-postgres}
       DB_HOST: db-test
-      DB_PORT: 5432
-      DB_NAME: beauty_salon
-      JWT_SECRET: supersecretkey
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-beauty_salon}
+      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
       INIT_DB: "true"
-      CORS_ORIGIN: http://localhost:3000
+
+      # Ensure consistent req.protocol behavior in tests if needed.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+
+      # Field-level encryption (at-rest)
+      DATA_ENCRYPTION_ACTIVE_KID: ${DATA_ENCRYPTION_ACTIVE_KID}
+      DATA_ENCRYPTION_KEY_V1: ${DATA_ENCRYPTION_KEY_V1}
+      DATA_ENCRYPTION_HMAC_KEY_V1: ${DATA_ENCRYPTION_HMAC_KEY_V1}
+
+      # Evolution API (not used in most tests, but keeps env consistent)
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-http://evolution-api:8080}
+      EVOLUTION_PUBLIC_ORIGIN: ${EVOLUTION_PUBLIC_ORIGIN:-}
+      EVOLUTION_REQUEST_ORIGIN: ${EVOLUTION_REQUEST_ORIGIN:-}
+
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
       PORT: 5000
       TEST_API_URL: http://localhost:5000
+
+      # Mobile env (optional in tests)
+      SALON_SLUG: ${SALON_SLUG:-}
+      API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:-}
+      MOBILE_RESET_URL: ${MOBILE_RESET_URL:-}
+
+      # Push must be disabled during tests
+      PUSH_ENABLED: "false"
     depends_on:
       - db-test
     command: sh -c "npm run init-db && node src/server.js & sleep 6 && npm run test:ci"
@@ -92,6 +189,7 @@ services:
     environment:
       CI: "true"
       REACT_APP_API_URL: http://api:5000
+      REACT_APP_EVOLUTION_API_KEY: ${REACT_APP_EVOLUTION_API_KEY}
     command: sh -c "export NODE_OPTIONS=--experimental-vm-modules; npm test --watchAll=false --passWithNoTests"
     depends_on:
       - api
@@ -104,9 +202,9 @@ services:
     container_name: evolution_api_beauty_salon
     restart: always
     ports:
-      - "8080:8080"
+      - "${EVOLUTION_PORT_HOST:-18080}:8080"
     env_file:
-      - evolution.env
+      - ./.env
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_data:/app/data
@@ -115,7 +213,9 @@ services:
     networks:
       - beauty-salon-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # curl is not available in this image and /health is not a valid route.
+      # Also, Evolution API enforces CORS; without Origin it may return 500.
+      test: ["CMD-SHELL", "wget -q --header=\"Origin: ${SERVER_URL}\" -O - http://localhost:8080/ > /dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 3

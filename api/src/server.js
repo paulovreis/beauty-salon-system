@@ -1,6 +1,11 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import hpp from 'hpp';
 import pool from './db/postgre.js';
 import authRoutes from './routes/authRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
@@ -13,26 +18,103 @@ import schedulingRoutes from './routes/schedulingRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import expenseRoutes from './routes/expenseRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import mobileRoutes from './routes/mobileRoutes.js';
+import mercadoPagoRoutes from './routes/mercadoPagoRoutes.js';
+import webhookRoutes from './routes/webhookRoutes.js';
+import eventsRoutes from './routes/eventsRoutes.js';
 import schedulerService from './services/schedulerService.js';
+import sanitizeRequest from './middlewares/sanitizeRequest.js';
 const { createTables } = await import('./db/initDb.js');
 
 dotenv.config();
+// Suporta .env único na raiz do repositório quando a API é executada a partir de /api
+// (ex.: `cd api` -> `npm start`). Em Docker, as env vars vêm do docker-compose.
+const rootEnvPath = path.resolve(process.cwd(), '..', '.env');
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath, override: false });
+}
 
 const app = express();
 
+app.disable('x-powered-by');
+
+const trustProxyEnv = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+if (trustProxyEnv === 'true' || trustProxyEnv === '1') {
+  // Only enable when running behind a trusted reverse proxy/load balancer.
+  app.set('trust proxy', 1);
+}
+
+app.use(helmet({
+  // This is a JSON API; CSP is usually enforced at the frontend.
+  contentSecurityPolicy: false,
+}));
+
+app.use(hpp());
+
+const jsonBodyLimit = process.env.JSON_BODY_LIMIT || '100kb';
+app.use(express.json({ limit: jsonBodyLimit }));
+app.use(express.urlencoded({ extended: false, limit: jsonBodyLimit }));
+
+app.use(sanitizeRequest());
+
+const enableRateLimit =
+  String(process.env.RATE_LIMIT_ENABLED || '').toLowerCase() !== 'false' &&
+  process.env.NODE_ENV !== 'test';
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number.parseInt(process.env.RATE_LIMIT_MAX || '30000', 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: (req) => {
+    // Webhooks are server-to-server and may retry; avoid 429 blocking.
+    return req.path?.startsWith('/webhooks/');
+  },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || '2000', 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+});
+
+function parseCorsOrigin(corsOriginEnv) {
+  const value = (corsOriginEnv || '*').trim();
+  if (!value || value === '*') return '*';
+
+  const parts = value
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return '*';
+  if (parts.length === 1) return parts[0];
+  return parts;
+}
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: parseCorsOrigin(process.env.CORS_ORIGIN),
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
+if (enableRateLimit) {
+  app.use(generalLimiter);
+}
+
+// Webhooks (public)
+app.use('/webhooks', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, webhookRoutes);
 
 // Rotas
 app.use('/auth', (req, res, next) => {
   req.pool = pool; // Disponibiliza o pool para os controllers via req.pool
   next();
-}, authRoutes);
+}, enableRateLimit ? authLimiter : (req, _res, next) => next(), authRoutes);
 
 
 app.use('/dashboard', (req, res, next) => {
@@ -78,6 +160,21 @@ app.use('/notifications', (req, res, next) => {
   req.pool = pool;
   next();
 }, notificationRoutes);
+
+app.use('/mobile', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, mobileRoutes);
+
+app.use('/mercadopago', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, mercadoPagoRoutes);
+
+app.use('/events', (req, res, next) => {
+  req.pool = pool;
+  next();
+}, eventsRoutes);
 
 const PORT = process.env.PORT || 5000;
 
