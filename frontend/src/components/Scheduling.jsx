@@ -25,6 +25,7 @@ import { useSSE } from "../hooks/useSSE";
 
 export default function Scheduling() {
   const { alert, showSuccess, showError, clearAlert } = useAlert();
+  const [userRole, setUserRole] = useState(null)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(false)
@@ -101,6 +102,12 @@ export default function Scheduling() {
       return null
     }
   }
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const decoded = token ? decodeJwt(token) : null
+    setUserRole(decoded?.role || null)
+  }, [])
 
   // Load employees and services once
   useEffect(() => {
@@ -787,17 +794,19 @@ export default function Scheduling() {
           <p className="text-muted-foreground">Gerencie os agendamentos dos clientes e a agenda dos funcionários</p>
         </div>
         <div className="flex items-center gap-2">
-          {mpConnected ? (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Mercado Pago conectado</Badge>
-              <Button variant="ghost" size="sm" onClick={handleDisconnectMercadoPago} disabled={mpLoading} className="text-destructive hover:text-destructive">
-                {mpLoading ? '...' : 'Desconectar'}
+          {userRole === 'owner' && (
+            mpConnected ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Mercado Pago conectado</Badge>
+                <Button variant="ghost" size="sm" onClick={handleDisconnectMercadoPago} disabled={mpLoading} className="text-destructive hover:text-destructive">
+                  {mpLoading ? '...' : 'Desconectar'}
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" onClick={handleConnectMercadoPago} disabled={mpLoading}>
+                {mpLoading ? 'Conectando...' : 'Conectar Mercado Pago'}
               </Button>
-            </div>
-          ) : (
-            <Button variant="outline" onClick={handleConnectMercadoPago} disabled={mpLoading}>
-              {mpLoading ? 'Conectando...' : 'Conectar Mercado Pago'}
-            </Button>
+            )
           )}
 
           <Dialog>
