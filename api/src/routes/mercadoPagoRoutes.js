@@ -9,7 +9,7 @@ const router = express.Router();
 router.get(
   '/connect-url',
   authenticateJWT,
-  roleMiddleware(['owner', 'manager', 'employee']),
+  roleMiddleware(['owner']),
   (req, res) => MercadoPagoController.getConnectUrl(req, res)
 );
 
@@ -23,7 +23,7 @@ router.get(
 router.delete(
   '/disconnect',
   authenticateJWT,
-  roleMiddleware(['owner', 'manager', 'employee']),
+  roleMiddleware(['owner']),
   (req, res) => MercadoPagoController.disconnect(req, res)
 );
 
