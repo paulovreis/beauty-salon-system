@@ -14,8 +14,7 @@ const MercadoPagoController = {
       if (!userId) return res.status(401).json({ message: 'Não autenticado' });
 
       const { rowCount } = await db.query(
-        `DELETE FROM mercadopago_accounts WHERE user_id = $1`,
-        [userId]
+        `DELETE FROM mercadopago_accounts`
       );
 
       return res.json({ ok: true, disconnected: rowCount > 0 });
@@ -45,8 +44,10 @@ const MercadoPagoController = {
       if (!userId) return res.status(401).json({ message: 'Não autenticado' });
 
       const { rows } = await db.query(
-        `SELECT mp_user_id, expires_at, updated_at FROM mercadopago_accounts WHERE user_id = $1`,
-        [userId]
+        `SELECT mp_user_id, expires_at, updated_at
+         FROM mercadopago_accounts
+         ORDER BY updated_at DESC NULLS LAST, created_at DESC
+         LIMIT 1`
       );
 
       if (!rows.length) return res.json({ connected: false });
@@ -106,6 +107,10 @@ const MercadoPagoController = {
           expiresAt,
         ]
       );
+
+      // Mantém apenas 1 conta Mercado Pago no sistema (global), independente do número de usuários.
+      // Deixa a conta recém conectada como a ativa.
+      await db.query(`DELETE FROM mercadopago_accounts WHERE user_id <> $1`, [userId]);
 
       const redirectBase = (process.env.FRONTEND_OAUTH_REDIRECT_URL || process.env.FRONTEND_URL || '').trim();
       if (redirectBase) {

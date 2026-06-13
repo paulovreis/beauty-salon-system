@@ -3,23 +3,55 @@ import dotenv from 'dotenv';
 import { decryptString } from '../utils/fieldCrypto.js';
 dotenv.config();
 
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function toYMDParts(dateVal) {
+  if (dateVal === null || dateVal === undefined) return null;
+
+  if (dateVal instanceof Date) {
+    if (Number.isNaN(dateVal.getTime())) return null;
+    const [y, m, d] = dateVal.toISOString().slice(0, 10).split('-');
+    return { y: Number(y), m: Number(m), d: Number(d) };
+  }
+
+  if (typeof dateVal === 'string') {
+    const s = dateVal.trim();
+    if (!s) return null;
+
+    // YYYY-MM-DD (date-only)
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      const [y, m, d] = s.slice(0, 10).split('-');
+      return { y: Number(y), m: Number(m), d: Number(d) };
+    }
+
+    // DD/MM/YYYY
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [d, m, y] = s.split('/');
+      return { y: Number(y), m: Number(m), d: Number(d) };
+    }
+  }
+
+  const parsed = new Date(typeof dateVal === 'number' ? dateVal : String(dateVal));
+  if (Number.isNaN(parsed.getTime())) return null;
+  const [y, m, d] = parsed.toISOString().slice(0, 10).split('-');
+  return { y: Number(y), m: Number(m), d: Number(d) };
+}
+
 function formatDateBR(dateVal) {
-  if (!dateVal) return '';
-  try {
-    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
-    return `${d}/${m}/${y}`;
-  } catch { return ''; }
+  const parts = toYMDParts(dateVal);
+  if (!parts) return '';
+  return `${pad2(parts.d)}/${pad2(parts.m)}/${parts.y}`;
 }
 
 function formatDateLongBR(dateVal) {
-  if (!dateVal) return '';
-  try {
-    const [y, m, d] = String(dateVal).slice(0, 10).split('-');
-    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
-    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-    const date = new Date(Number(y), Number(m) - 1, Number(d));
-    return `${weekdays[date.getDay()]}, ${Number(d)} de ${months[Number(m) - 1]} de ${y}`;
-  } catch { return ''; }
+  const parts = toYMDParts(dateVal);
+  if (!parts) return '';
+  const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+  const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const dow = new Date(Date.UTC(parts.y, parts.m - 1, parts.d)).getUTCDay();
+  return `${weekdays[dow]}, ${parts.d} de ${months[parts.m - 1]} de ${parts.y}`;
 }
 
 function tryDecrypt(value) {
@@ -1141,13 +1173,7 @@ Volte sempre! 😊✨`;
     const salonName = (process.env.NOME_SALAO || 'Salão').trim();
     const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    let dateStr = '';
-    if (appointmentDate) {
-      try {
-        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
-        dateStr = `${d}/${m}/${y}`;
-      } catch { dateStr = ''; }
-    }
+    const dateStr = appointmentDate ? formatDateBR(appointmentDate) : '';
 
     return [
       `✅ *Pagamento Confirmado!*`,
@@ -1168,13 +1194,7 @@ Volte sempre! 😊✨`;
   createPixPaymentConfirmedEmployeeMessage({ clientName, appointmentId, serviceName, appointmentDate, appointmentTime, amount }) {
     const value = Number(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    let dateStr = '';
-    if (appointmentDate) {
-      try {
-        const [y, m, d] = String(appointmentDate).slice(0, 10).split('-');
-        dateStr = `${d}/${m}/${y}`;
-      } catch { dateStr = ''; }
-    }
+    const dateStr = appointmentDate ? formatDateBR(appointmentDate) : '';
 
     return [
       `💰 *Pagamento PIX Recebido!*`,
@@ -1589,11 +1609,13 @@ Volte sempre! 😊✨`;
 
     // Datas
     if (key.includes('date')) {
-      try {
-        return new Date(value).toLocaleDateString('pt-BR');
-      } catch {
-        return value;
+      const formatted = formatDateBR(value);
+      if (formatted) return formatted;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       }
+      return value;
     }
 
     // Duração
@@ -1704,19 +1726,17 @@ Volte sempre! 😊✨`;
 
   // Template aprimorado para confirmação de agendamento do cliente
   createEnhancedClientConfirmation(appointment) {
-    const appointmentDate = new Date(appointment.appointment_date);
-    const [year, month, day] = appointment.appointment_date.split('-');
-    const formattedDate = new Date(year, month - 1, day);
-    
+    const parts = toYMDParts(appointment.appointment_date);
+
     const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
     const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-    
-    const weekday = weekdays[formattedDate.getDay()];
-    const dayNum = parseInt(day);
-    const monthName = months[parseInt(month) - 1];
-    const yearNum = parseInt(year);
-    
-    const dateString = `${weekday}, ${dayNum} de ${monthName} de ${yearNum}`;
+
+    const weekday = parts ? weekdays[new Date(Date.UTC(parts.y, parts.m - 1, parts.d)).getUTCDay()] : '';
+    const dayNum = parts ? parts.d : null;
+    const monthName = parts ? months[parts.m - 1] : '';
+    const yearNum = parts ? parts.y : null;
+
+    const dateString = parts ? `${weekday}, ${dayNum} de ${monthName} de ${yearNum}` : 'N/A';
 
     let message = `✨ *AGENDAMENTO CONFIRMADO* ✨\n\n`;
     message += `💖 Olá, ${appointment.client_name}!\n`;
@@ -1774,17 +1794,16 @@ Volte sempre! 😊✨`;
 
   // Template para lembrete de agendamento
   createAppointmentReminderMessage(appointment) {
-    const [year, month, day] = appointment.appointment_date.split('-');
-    const formattedDate = new Date(year, month - 1, day);
-    
     const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
-    const weekday = weekdays[formattedDate.getDay()];
+    const parts = toYMDParts(appointment.appointment_date);
+    const weekday = parts ? weekdays[new Date(Date.UTC(parts.y, parts.m - 1, parts.d)).getUTCDay()] : '';
+    const dateStr = parts ? formatDateBR(appointment.appointment_date) : '';
 
     let message = `🔔 *LEMBRETE DE AGENDAMENTO*\n\n`;
     message += `💖 Olá, ${appointment.client_name}!\n\n`;
     message += `✨ Este é um lembrete carinhoso do seu agendamento de amanhã:\n\n`;
     
-    message += `📅 *${weekday}* - ${formattedDate.toLocaleDateString('pt-BR')}\n`;
+    message += `📅 *${weekday || 'Data'}* - ${dateStr || 'N/A'}\n`;
     message += `🕐 *${appointment.appointment_time}*\n`;
     message += `✂️ *${appointment.service_name}*\n`;
     message += `👨‍💼 *Profissional:* ${appointment.employee_name}\n\n`;

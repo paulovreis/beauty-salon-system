@@ -152,17 +152,24 @@ export async function refreshAccessToken({ refreshToken }) {
 }
 
 export async function getValidAccessTokenForUser({ db, userId }) {
+  // Conexão Mercado Pago é GLOBAL para o sistema (uma conta), independente do usuário.
+  // Mantemos a assinatura por compatibilidade com os controllers já existentes.
+  void userId;
+
   const { rows } = await db.query(
-    `SELECT access_token_enc, refresh_token_enc, expires_at FROM mercadopago_accounts WHERE user_id = $1`,
-    [userId]
+    `SELECT id, user_id, access_token_enc, refresh_token_enc, expires_at
+     FROM mercadopago_accounts
+     ORDER BY updated_at DESC NULLS LAST, created_at DESC
+     LIMIT 1`
   );
 
   if (!rows.length || !rows[0].access_token_enc) {
-    const err = new Error('Conta Mercado Pago não conectada para este usuário');
+    const err = new Error('Nenhuma conta Mercado Pago conectada ainda');
     err.statusCode = 400;
     throw err;
   }
 
+  const accountId = rows[0].id;
   const accessToken = decryptString(rows[0].access_token_enc);
   const refreshToken = rows[0].refresh_token_enc ? decryptString(rows[0].refresh_token_enc) : null;
   const expiresAt = rows[0].expires_at ? new Date(rows[0].expires_at).getTime() : null;
@@ -185,8 +192,8 @@ export async function getValidAccessTokenForUser({ db, userId }) {
            scope = COALESCE($5, scope),
            expires_at = $6,
            updated_at = NOW()
-       WHERE user_id = $1`,
-      [userId, newAccessTokenEnc, newRefreshTokenEnc, refreshed.token_type || null, refreshed.scope || null, newExpiresAt]
+       WHERE id = $1`,
+      [accountId, newAccessTokenEnc, newRefreshTokenEnc, refreshed.token_type || null, refreshed.scope || null, newExpiresAt]
     );
 
     return refreshed.access_token;
