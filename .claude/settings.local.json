@@ -12,7 +12,9 @@
       "WebFetch(domain:omega.mercadopago.com.br)",
       "WebFetch(domain:www.mercadopago.com.uy)",
       "WebFetch(domain:www.mercadopago.cl)",
-      "WebFetch(domain:beta.mercadopago.com.ar)"
+      "WebFetch(domain:beta.mercadopago.com.ar)",
+      "Bash(docker compose *)",
+      "Bash(python -c \"import yaml,sys; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\); print\\('yaml OK'\\)\")"
     ]
   }
 }

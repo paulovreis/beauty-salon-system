@@ -205,6 +205,16 @@ services:
       - "${EVOLUTION_PORT_HOST:-18080}:8080"
     env_file:
       - ./.env
+    environment:
+      # URL pública HTTPS da Evolution (usada em QR code e webhooks).
+      # Em produção: https://evolution.stylehub.helderporto.com
+      SERVER_URL: "${EVOLUTION_PUBLIC_ORIGIN:-http://localhost:${EVOLUTION_PORT_HOST:-18080}}"
+
+      # CORS: o frontend chama a Evolution direto do browser (header apikey => preflight).
+      # Precisa liberar a(s) origin(s) do frontend, não a própria origin da Evolution.
+      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
+      CORS_METHODS: "${EVOLUTION_CORS_METHODS:-GET,POST,PUT,DELETE,PATCH,OPTIONS}"
+      CORS_CREDENTIALS: "${EVOLUTION_CORS_CREDENTIALS:-true}"
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_data:/app/data
