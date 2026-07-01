@@ -210,11 +210,14 @@ services:
       # Em produção: https://evolution.stylehub.helderporto.com
       SERVER_URL: "${EVOLUTION_PUBLIC_ORIGIN:-http://localhost:${EVOLUTION_PORT_HOST:-18080}}"
 
-      # CORS: o frontend chama a Evolution direto do browser (header apikey => preflight).
-      # Precisa liberar a(s) origin(s) do frontend, não a própria origin da Evolution.
-      CORS_ORIGIN: "${FRONTEND_PUBLIC_ORIGINS:-${FRONTEND_PUBLIC_ORIGIN:-http://localhost:${FRONTEND_PORT_HOST:-13000}}}"
+      # CORS: a Evolution é protegida por API key (apikey), não por CORS.
+      # Precisa liberar tanto o browser (frontend) quanto chamadas servidor-a-servidor
+      # SEM header Origin (backend da API que envia notificações, plataformas externas
+      # como a "Conexões", webhooks). Restringir a origin quebra esses clientes com
+      # "Not allowed by CORS". Por isso o padrão é "*" (liberado).
+      CORS_ORIGIN: "${EVOLUTION_CORS_ORIGIN:-*}"
       CORS_METHODS: "${EVOLUTION_CORS_METHODS:-GET,POST,PUT,DELETE,PATCH,OPTIONS}"
-      CORS_CREDENTIALS: "${EVOLUTION_CORS_CREDENTIALS:-true}"
+      CORS_CREDENTIALS: "${EVOLUTION_CORS_CREDENTIALS:-false}"
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_data:/app/data

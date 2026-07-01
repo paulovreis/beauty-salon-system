@@ -14,7 +14,14 @@
       "WebFetch(domain:www.mercadopago.cl)",
       "WebFetch(domain:beta.mercadopago.com.ar)",
       "Bash(docker compose *)",
-      "Bash(python -c \"import yaml,sys; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\); print\\('yaml OK'\\)\")"
+      "Bash(python -c \"import yaml,sys; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\); print\\('yaml OK'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -H \"Origin: https://stylehub.helderporto.com\" https://evolution.stylehub.helderporto.com/ --max-time 15)",
+      "Bash(curl -s -D - -o /dev/null -H \"Origin: https://stylehub.helderporto.com\" https://evolution.stylehub.helderporto.com/ --max-time 15)",
+      "Bash(curl -s -D - -o /dev/null -X OPTIONS -H 'Origin: https://stylehub.helderporto.com' -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: apikey' https://evolution.stylehub.helderporto.com/instance/connectionState/suporte-heldersorteios --max-time 15)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -H 'Origin: https://stylehub.helderporto.com' -H 'apikey: 2f8c1e7b-4a6d-4e2a-9c3b-7e5d2a1f9b6e' https://evolution.stylehub.helderporto.com/instance/connectionState/suporte-heldersorteios --max-time 15)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -X POST -H 'Content-Type: application/json' -H 'apikey: 2f8c1e7b-4a6d-4e2a-9c3b-7e5d2a1f9b6e' -d '{\"instanceName\":\"suporte-heldersorteios\",\"qrcode\":true,\"integration\":\"WHATSAPP-BAILEYS\"}' https://evolution.stylehub.helderporto.com/instance/create --max-time 15)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -H 'apikey: 2f8c1e7b-4a6d-4e2a-9c3b-7e5d2a1f9b6e' https://evolution.stylehub.helderporto.com/instance/fetchInstances?instanceName=suporte-heldersorteios --max-time 15)",
+      "Bash(python -c \"import yaml; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\); print\\('yaml OK'\\)\")"
     ]
   }
 }

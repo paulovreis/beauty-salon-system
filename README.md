@@ -60,9 +60,12 @@ EVOLUTION_PUBLIC_ORIGIN=https://evolution.stylehub.helderporto.com
 FRONTEND_PUBLIC_ORIGINS=https://stylehub.helderporto.com,https://www.stylehub.helderporto.com
 ```
 
-O `docker-compose.yml` usa essas variáveis para configurar automaticamente o `SERVER_URL`
-(QR code/webhooks) e o `CORS_ORIGIN` da Evolution — assim o frontend em
-`https://stylehub.helderporto.com` consegue chamar a Evolution direto do browser sem bloqueio de CORS.
+O `docker-compose.yml` usa `EVOLUTION_PUBLIC_ORIGIN` para configurar o `SERVER_URL`
+(QR code/webhooks). O CORS da Evolution fica liberado (`CORS_ORIGIN=*`), pois a API é
+protegida por **API key** — e clientes servidor-a-servidor (o backend da API que envia
+notificações, webhooks, plataformas externas de atendimento) chamam **sem header `Origin`**.
+Restringir a origin faz a Evolution responder `500 "Not allowed by CORS"` para esses clientes.
+Se precisar restringir mesmo assim, defina `EVOLUTION_CORS_ORIGIN` no `.env`.
 
 Exemplo de vhost Nginx (server block do proxy da VPS):
 
